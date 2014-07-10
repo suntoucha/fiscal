@@ -1,0 +1,41 @@
+COMMON:
+  DEBUG: False
+  TESTING: False
+  LOG_CFG:
+    version: 1
+    disable_existing_loggers: False
+    formatters:
+      simple:
+        format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+      default:
+        format: '%(asctime)s %(levelname)-8s %(name)-15s %(message)s'
+        datefmt: '%Y-%m-%d %H:%M:%S'
+    handlers:
+      stdout:
+        class: logging.StreamHandler
+        formatter: simple
+        stream: ext://sys.stdout
+
+      stderr:
+        class: logging.StreamHandler
+        formatter: simple
+        stream: ext://sys.stderr
+
+      rainbow:
+        class: rainbow_logging_handler.RainbowLoggingHandler
+        formatter: default
+        stream: ext://sys.stderr
+
+    loggers:
+      '':
+        level: DEBUG
+        handlers: [stdout]
+
+
+DEVELOPMENT:
+  _parent: COMMON
+  LOG_CFG:
+    loggers:
+      '':
+        level: DEBUG
+        handlers: [rainbow]
