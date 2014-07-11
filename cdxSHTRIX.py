@@ -21,17 +21,14 @@ def float2100int(f, digits=2):
     return int(s.replace('.', ''))
 
 logging.debug('Shtrih-M')
-ENQ = '\x05'
-STX = '\x02'
-ACK = '\x06'
-NAK = '\x15'
 PORT = '/dev/ttyS4'  # '/dev/ttyUSB0'
 BAUDRATE = 9600
 PASSWORD = 30  # Пароль админа по умолчанию = 30, Пароль кассира по умолчанию = 1
 LASTRESPONS = None
 REGKASSIR = False
 
-# Последняя запрошенная команда: имя, счетчик повторений, дата первого обращения, дата последнего обращения
+# Последняя запрошенная команда:
+#    имя, счетчик повторений, дата первого обращения, дата последнего обращения
 LASTCMD = ['', 0, None, None, None]
 
 resultKKM = {
@@ -75,8 +72,12 @@ resultKKM = {
     '0074': u"Base memory error"
 }
 
+ENQ = '\x05'
+STX = '\x02'
+ACK = '\x06'
+NAK = '\x15'
 
-def lrc2(data, lenData=None):
+def LRC(data, lenData=None):
     """Подсчет CRC"""
     result = 0
     if lenData is None:
@@ -87,7 +88,7 @@ def lrc2(data, lenData=None):
     return chr(result)
 
 
-def readA(ser):
+def read_answer(ser):
     # global LASTRESPONS, LASTCMD
     data = None  # нет связи
     # fg = True
@@ -101,12 +102,12 @@ def readA(ser):
         ch = ser.read(1)
         # logging.debug(('repr(ch):', repr(ch)))
         if '\x06' == ch:
-            # logging.debug(('ACK'  # Получаем ответ от ФР))
+            logging.debug('ACK')  # Получаем ответ от ФР))
             stx = ser.read(1)
             lenCmd = ser.read(1)
             data = ser.read(ord(lenCmd))
             crc = ser.read(1)
-            if crc == lrc2(data):
+            if crc == LRC(data):
                 ser.write(ACK)
             else:
                 ser.write(NAK)
@@ -117,7 +118,7 @@ def readA(ser):
             #  logging.debug(('read err:', err, fg))
         elif '\x15' == ch:
             data = ''
-            # logging.debug(('NAK'))
+            logging.debug(('NAK'))
         elif '' != ch:  # Ожидаем конца передачи от ФР
             # LASTRESPONS = None
             # LASTCMD = ['', 0, None, None, None]
@@ -129,7 +130,7 @@ def readA(ser):
             #  lenCmd = ser.read(1)
             #  data = ser.read(ord(lenCmd))
             #  crc = ser.read(1)
-            #  if crc == lrc2(data):
+            #  if crc == LRC(data):
                 #  ser.write(ACK)
             #  else:
                 #  ser.write(NAK)
@@ -152,14 +153,14 @@ def beep(ser=None, passwd=PASSWORD):
     """
     cmd = pack('<bi', 0x13, passwd)
     fmtA = '<B'
-    # return execCmd(ser, cmd, fmtA)
+    # return exec_cmd(ser, cmd, fmtA)
 
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             # if '0000' == rr[0]:
             #     r = LASTRESPONS[2]
     except:
@@ -167,7 +168,7 @@ def beep(ser=None, passwd=PASSWORD):
         return rr
 
 
-def cmdSkip(fgCut=False, ser=None, passwd=PASSWORD):
+def skip(fgCut=False, ser=None, passwd=PASSWORD):
     """Запрос «Управление прогоном/отрезом чековой ленты»"""
     cmd = pack('<biBB', 0x29, passwd, 2**1, 5)
     fmtA = '<B'
@@ -175,15 +176,15 @@ def cmdSkip(fgCut=False, ser=None, passwd=PASSWORD):
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             if '0000' == rr[0]:
                 # r = LASTRESPONS[2]
                 if fgCut:
-                    rr = sendCmd(pack('<biB', 0x25, passwd, 1), '<B', ser)
+                    rr = send_cmd(pack('<biB', 0x25, passwd, 1), '<B', ser)
                     if 0 == rr[0]:
-                        rr = getRespons()
+                        rr = get_response()
     except:
         rr = None
     return rr
@@ -201,12 +202,12 @@ def cut(ser, passwd=PASSWORD):
     cmd = pack('<biB', 0x25, passwd, 1)
     fmtA = '<B'
 
-    return execCmd(ser, cmd, fmtA)
+    return exec_cmd(ser, cmd, fmtA)
 
 
-def sendMsg(ser, cmd):
+def raw(ser, cmd):
     lenCmd = len(cmd)
-    crc = lrc2(cmd, lenCmd)
+    crc = LRC(cmd, lenCmd)
     # logging.debug((b2a_hex(STX+lenCmd+cmd+crc)))
     ser.write(STX)
     ser.write(chr(lenCmd))
@@ -215,12 +216,12 @@ def sendMsg(ser, cmd):
     ser.flush()
 
 
-def execCmd(ser, cmd, fmtA=''):
+def exec_cmd(ser, cmd, fmtA=''):
     fg = True
     while fg:
         fg = False
-        sendMsg(ser, cmd)
-        data = readA(ser)
+        raw(ser, cmd)
+        data = read_answer(ser)
         if data:
             cmdA = b2a_hex(data[0])
             err = '00%s' % b2a_hex(data[1])
@@ -236,7 +237,7 @@ def execCmd(ser, cmd, fmtA=''):
                 return cmdA, err, None
 
 
-def sendCmd(cmd, fmtA='', ser=None, port=None, passwd=PASSWORD):
+def send_cmd(cmd, fmtA='', ser=None, port=None, passwd=PASSWORD):
     global LASTRESPONS, REGKASSIR, PORT, BAUDRATE
     if port is None:
         port = PORT
@@ -248,20 +249,20 @@ def sendCmd(cmd, fmtA='', ser=None, port=None, passwd=PASSWORD):
             fgClose = True
             ser = serial.Serial(port, BAUDRATE, timeout=1)
         # logging.debug(('Вычитываем ответ предыдущий команды:',))
-        data = readA(ser)
+        data = read_answer(ser)
         # logging.debug((repr(data)))
         # if not REGKASSIR:
         #     # Вычитываем ответ предыдущий команды
-        #     data = readA(ser)
+        #     data = read_answer(ser)
         #     REGKASSIR = True
         # logging.debug((2222, REGKASSIR, ser))
         fg = data is not None
         while fg:
             fg = False
             # logging.debug(('Посылаем команду'))
-            sendMsg(ser, cmd)
+            raw(ser, cmd)
             # logging.debug(('Вычитываем ответ'))
-            data = readA(ser)
+            data = read_answer(ser)
             logging.debug(('ERX', repr(data)))
             logging.debug(('hexxxx', b2a_hex(data[2:]), type(data[2:])))
 
@@ -284,8 +285,8 @@ def sendCmd(cmd, fmtA='', ser=None, port=None, passwd=PASSWORD):
                     fg = True
                     LASTRESPONS = cmdA, err, None
                     time.sleep(0.25)
-                    sendMsg(ser, pack('<Bi', 0xB0, passwd))
-                    data = readA(ser)
+                    raw(ser, pack('<Bi', 0xB0, passwd))
+                    data = read_answer(ser)
                 else:
                     LASTRESPONS = cmdA, err, None
         if data is None:
@@ -304,7 +305,7 @@ def sendCmd(cmd, fmtA='', ser=None, port=None, passwd=PASSWORD):
     return r
 
 
-def getRespons(filename=None, data=None):
+def get_response(filename=None, data=None):
     global LASTRESPONS
     # Ответ для анализа
     if data:
@@ -322,7 +323,7 @@ def getRespons(filename=None, data=None):
     except Exception, e:
         # import traceback
         # logging.debug((traceback.print_exc()))
-        logging.debug(('getRespons:', str(e)))
+        logging.debug(('get_response:', str(e)))
         respons_cmd = None
 
     if respons_cmd:
@@ -332,7 +333,7 @@ def getRespons(filename=None, data=None):
         return -1, u'нет связи'
 
 
-def cmdSumIN(nalichka, ser=None, passwd=PASSWORD):
+def put_sum(nalichka, ser=None, passwd=PASSWORD):
     """Команда: Внесение
     50H. Длина сообщения: 10 байт.
     Пароль оператора (4 байта)
@@ -349,9 +350,9 @@ def cmdSumIN(nalichka, ser=None, passwd=PASSWORD):
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser=ser)
+        rr = send_cmd(cmd, fmtA, ser=ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             # if '0000' == rr[0]:
             #     r = LASTRESPONS[2]
     except:
@@ -359,16 +360,16 @@ def cmdSumIN(nalichka, ser=None, passwd=PASSWORD):
     return rr
 
 
-def cmdSumOUT(nalichka, ser=None, passwd=PASSWORD):
+def take_sum(nalichka, ser=None, passwd=PASSWORD):
     cmd = pack('<BilB', 0x51, passwd, float2100int(nalichka), 0)
     fmtA = '<BH'
 
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser=ser)
+        rr = send_cmd(cmd, fmtA, ser=ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             # if '0000' == rr[0]:
             #    r = LASTRESPONS[2]
     except:
@@ -385,7 +386,7 @@ def cmdX(ser=None, passwd=PASSWORD):
     Код ошибки (1 байт)
     Порядковый номер оператора (1 байт) 29, 30
     """
-    cmdCancel(ser, passwd)
+    cancel_receipt(ser, passwd)
 
     cmd = pack('<Bi', 0x40, passwd)
     fmtA = '<B'
@@ -393,9 +394,9 @@ def cmdX(ser=None, passwd=PASSWORD):
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             # if '0000' == rr[0]:
             #     r = LASTRESPONS[2]
     except:
@@ -415,14 +416,14 @@ def cmdZ(ser=None, passwd=PASSWORD):
     cmd = pack('<Bi', 0x41, passwd)
     fmtA = '<B'
 
-    # return execCmd(ser, cmd, fmtA)
+    # return exec_cmd(ser, cmd, fmtA)
 
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             # if '0000' == rr[0]:
             #     r = LASTRESPONS[2]
     except:
@@ -430,7 +431,7 @@ def cmdZ(ser=None, passwd=PASSWORD):
     return rr
 
 
-def cmdDrawer(ser=None, passwd=PASSWORD):
+def open_drawer(ser=None, passwd=PASSWORD):
     """ Команда: Открыть денежный ящик
     28H. Длина сообщения: 6 байт.
     Пароль оператора (4 байта)
@@ -446,19 +447,19 @@ def cmdDrawer(ser=None, passwd=PASSWORD):
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             if '0000' == rr[0]:
                 # r = LASTRESPONS[2]
                 cmd = pack('<BiB', 0x28, passwd, 1)
-                sendCmd(cmd, fmtA, ser)
+                send_cmd(cmd, fmtA, ser)
     except:
         rr = None
     return rr
 
 
-def cmdCopyDoc(ser=None, passwd=PASSWORD):
+def retry_doc(ser=None, passwd=PASSWORD):
     """Команда: Повтор документа
     8CH. Длина сообщения: 5 байт.
     Пароль оператора (4 байта)
@@ -470,14 +471,14 @@ def cmdCopyDoc(ser=None, passwd=PASSWORD):
     cmd = pack('<Bi', 0x8C, passwd)
     fmtA = '<B'
 
-    # return execCmd(ser, cmd, fmtA)
+    # return exec_cmd(ser, cmd, fmtA)
 
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             # if '0000' == rr[0]:
             #    r = LASTRESPONS[2]
     except:
@@ -485,7 +486,7 @@ def cmdCopyDoc(ser=None, passwd=PASSWORD):
     return rr
 
 
-def cmdCancel(ser=None, passwd=PASSWORD):
+def cancel_receipt(ser=None, passwd=PASSWORD):
     """Команда: Аннулирование чека
     88H. Длина сообщения: 5 байт.
     Пароль оператора (4 байта)
@@ -497,14 +498,14 @@ def cmdCancel(ser=None, passwd=PASSWORD):
     cmd = pack('<Bi', 0x88, passwd)
     fmtA = '<B'
 
-    # return execCmd(ser, cmd, fmtA)
+    # return exec_cmd(ser, cmd, fmtA)
 
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             # if '0000' == rr[0]:
             #    r = LASTRESPONS[2]
     except:
@@ -512,7 +513,7 @@ def cmdCancel(ser=None, passwd=PASSWORD):
     return rr
 
 
-def continuePrint(ser, passwd=PASSWORD):
+def continue_print(ser, passwd=PASSWORD):
     """Команда: Продолжение печати
     B0H. Длина сообщения: 5 байт.
     Пароль оператора, администратора или системного администратора (4 байта)
@@ -524,14 +525,14 @@ def continuePrint(ser, passwd=PASSWORD):
     cmd = pack('<Bi', 0xB0, passwd)
     fmtA = '<B'
 
-    # return execCmd(ser, cmd, fmtA)
+    # return exec_cmd(ser, cmd, fmtA)
 
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             # if '0000' == rr[0]:
             #     data = LASTRESPONS[2]
     except:
@@ -574,11 +575,11 @@ def continuePrint(ser, passwd=PASSWORD):
 # 
     #  #data[13] = '%04d-%02d-%02d' % (2000+ord(data[13][2]), ord(data[13][0]), ord(data[13][1]) )
     #  #data[14] = '%02d:%02d:%02d' % tuple(map(ord, data[14]))
-    #  cmdA, err, data = execCmd(ser, cmd, fmtA)
+    #  cmdA, err, data = exec_cmd(ser, cmd, fmtA)
     #  return cmdA, err, [data[0], data[16]]
 
 
-def cmdGetKkmNo(ser=None, passwd=PASSWORD):
+def get_kkm_no(ser=None, passwd=PASSWORD):
     """Запрос «Информация о версии ПО ККМ»"""
 
     cmd = pack('<Bi', 0x11, passwd)
@@ -587,9 +588,9 @@ def cmdGetKkmNo(ser=None, passwd=PASSWORD):
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             logging.debug(('kkmno:', rr))
             if '0000' == rr[0]:
                 data = LASTRESPONS[2]
@@ -637,11 +638,11 @@ def cmdGetKkmNo(ser=None, passwd=PASSWORD):
     #  cmd = pack('<Bi', 0x11, passwd)
     #  fmtA = '<BHH3sBHHBBBHH3s3s3sBLHHBB6s'
 # 
-    #  cmdA, err, data = execCmd(ser, cmd, fmtA)
+    #  cmdA, err, data = exec_cmd(ser, cmd, fmtA)
     #  return cmdA, err, (data[0], (2000+ord(data[13][2]), ord(data[13][0]), ord(data[13][1]), ord(data[14][0]), ord(data[14][1]), ord(data[14][2])))
 
 
-def cmdGetDT(ser=None, passwd=PASSWORD):
+def get_datetime(ser=None, passwd=PASSWORD):
     """Запрос «Считать текущее время и дату ККМ»"""
 
     cmd = pack('<Bi', 0x11, passwd)
@@ -650,9 +651,9 @@ def cmdGetDT(ser=None, passwd=PASSWORD):
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             if '0000' == rr[0]:
                 data = LASTRESPONS[2]
                 rr = (
@@ -668,7 +669,7 @@ def cmdGetDT(ser=None, passwd=PASSWORD):
     return rr
 
 
-def cmdSetDT(curDT=None, ser=None, passwd=PASSWORD):
+def set_datetime(curDT=None, ser=None, passwd=PASSWORD):
     """Программирование времени и даты
     Установка даты
     Команда:     22H. Длина сообщения: 8 байт.
@@ -691,7 +692,7 @@ def cmdSetDT(curDT=None, ser=None, passwd=PASSWORD):
     """
     global LASTRESPONS
 
-    rr = cmdGetDT(ser)
+    rr = get_datetime(ser)
     if rr and len(rr) > 2:
         kkmDT = rr
         if curDT is None:
@@ -702,9 +703,9 @@ def cmdSetDT(curDT=None, ser=None, passwd=PASSWORD):
             cmd = pack('<BiBBB', 0x22, passwd,
                        curDT[2], curDT[1], curDT[0] - 2000,)
             try:
-                rr = sendCmd(cmd, '', ser)
+                rr = send_cmd(cmd, '', ser)
                 if 0 == rr[0]:
-                    rr = getRespons()
+                    rr = get_response()
                     fg = '0000' == rr[0]
             except:
                 pass
@@ -713,9 +714,9 @@ def cmdSetDT(curDT=None, ser=None, passwd=PASSWORD):
                 cmd = pack('<BiBBB', 0x23, passwd,
                            curDT[2], curDT[1], curDT[0] - 2000,)
                 try:
-                    rr = sendCmd(cmd, '', ser)
+                    rr = send_cmd(cmd, '', ser)
                     if 0 == rr[0]:
-                        rr = getRespons()
+                        rr = get_response()
                         fg = '0000' == rr[0]
                 except:
                     pass
@@ -723,9 +724,9 @@ def cmdSetDT(curDT=None, ser=None, passwd=PASSWORD):
                 cmd = pack('<BiBBB', 0x21, passwd,
                            curDT[3], curDT[4], curDT[5],)
                 try:
-                    rr = sendCmd(cmd, '', ser)
+                    rr = send_cmd(cmd, '', ser)
                     if 0 == rr[0]:
-                        rr = getRespons()
+                        rr = get_response()
                         fg = '0000' == rr[0]
                 except:
                     pass
@@ -734,7 +735,7 @@ def cmdSetDT(curDT=None, ser=None, passwd=PASSWORD):
     return rr
 
 
-def cmdPrint(text, ser=None, passwd=PASSWORD):
+def writeln(text, ser=None, passwd=PASSWORD):
     """Команда: Печать строки
     17H. Длина сообщения: 46 байт.
     Пароль оператора (4 байта)
@@ -750,14 +751,14 @@ def cmdPrint(text, ser=None, passwd=PASSWORD):
                text[:40].encode('cp1251').ljust(40, '\x00'))
     fmtA = '<B'
 
-    # return execCmd(ser, cmd, fmtA)
+    # return exec_cmd(ser, cmd, fmtA)
 
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             # if '0000' == rr[0]:
             #    r = LASTRESPONS[2]
     except:
@@ -765,7 +766,7 @@ def cmdPrint(text, ser=None, passwd=PASSWORD):
     return rr
 
 
-def openCheck(ser, fg_return=False, passwd=PASSWORD):
+def open_receipt(ser, fg_return=False, passwd=PASSWORD):
     """Команда:     8DH. Длина сообщения: 6 байт.
              • Пароль оператора (4 байта)
              • Тип документа (1 байт): 0 – продажа;
@@ -783,7 +784,7 @@ def openCheck(ser, fg_return=False, passwd=PASSWORD):
     cmd = pack('<BiB', 0x8D, passwd, ctype)
     fmtA = '<B'
 
-    return execCmd(ser, cmd, fmtA)
+    return exec_cmd(ser, cmd, fmtA)
 
 
 def sale(ser, amount, price, text=u"", department=0,
@@ -820,10 +821,10 @@ def sale(ser, amount, price, text=u"", department=0,
     )
     fmtA = '<B'
 
-    return execCmd(ser, cmd, fmtA)
+    return exec_cmd(ser, cmd, fmtA)
 
 
-def closeCheck(ser, nalichka, skidka=0, text=u"", summa2=0, summa3=0, summa4=0,
+def close_check(ser, nalichka, skidka=0, text=u"", summa2=0, summa3=0, summa4=0,
                taxes=[0, 0, 0, 0][:], passwd=PASSWORD):
     """
         Команда:     85H. Длина сообщения: 71 байт.
@@ -855,7 +856,7 @@ def closeCheck(ser, nalichka, skidka=0, text=u"", summa2=0, summa3=0, summa4=0,
         text[:40].encode('cp1251').ljust(40, '\x00')
     )
     fmtA = '<Blx'
-    cmdA, err, data = execCmd(ser, cmd, fmtA)
+    cmdA, err, data = exec_cmd(ser, cmd, fmtA)
     if data:
         data[1] = data[1] / 100.0
     return cmdA, err, data
@@ -891,10 +892,10 @@ def setBaudrate(ser, passwd=PASSWORD):
         выдаются ФР со старой скоростью обмена.
     """
     cmd = pack('<BiBBB', 0x14, passwd, 0, 2, 156)
-    return execCmd(ser, cmd)
+    return exec_cmd(ser, cmd)
 
 
-def isPort(iPort, iSpeed):
+def is_port(iPort, iSpeed):
     ser = None
     if 'posix' == os.name:
         # fPort = '/dev/ttyUSB%s' % iPort
@@ -917,7 +918,7 @@ def isPort(iPort, iSpeed):
     return ser
 
 
-def scanKkm():
+def scan_kkm():
     for iPort in xrange(256):
         ser = None
         logging.debug(('\r...',))
@@ -927,12 +928,12 @@ def scanKkm():
             if ser:
                 ser.close()
                 ser = None
-            ser = isPort(iPort, iSpeed)
+            ser = is_port(iPort, iSpeed)
             if ser:
                 logging.debug(('\r', ser.port, ser.getBaudrate(),))
                 sys.stdout.flush()
                 try:
-                    data = readA(ser)
+                    data = read_answer(ser)
                 except:
                     data = None
                 if data is not None:
@@ -955,11 +956,11 @@ def scanKkm():
             sys.stdout.flush()
 
 
-def cmdChek(aNalichnye, tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
+def receipt(aNalichnye, tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
     """
         Запрос «Фискальный документ»: Продажа
         Пример использования
-        cmdChek(100, [(u'Товар1', 1, 1.23),
+        receipt(100, [(u'Товар1', 1, 1.23),
         (u'Товар2', 2, 0.60),
         (u'Товар3', 3, 0.41)], 7)
     """
@@ -994,17 +995,17 @@ def cmdChek(aNalichnye, tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
             ser = serial.Serial(port, BAUDRATE, timeout=1)
 
         fgReturn = False
-        data = openCheck(ser, fg_return=fgReturn)
+        data = open_receipt(ser, fg_return=fgReturn)
         r = (data[1], resultKKM.get(data[1], data[1]))
         logging.debug(('  openCheck1:', r))
         if '0000' != r[0]:
-            r = cmdCancel(ser, passwd)
+            r = cancel_receipt(ser, passwd)
             logging.debug(('  1:', r))
-            data = openCheck(ser, fg_return=fgReturn)
+            data = open_receipt(ser, fg_return=fgReturn)
             r = (data[1], resultKKM.get(data[1], data[1]))
             logging.debug(('  openCheck2:', r))
-            # r = continuePrint(ser)
-            logging.debug(('  continuePrint', r))
+            # r = continue_print(ser)
+            logging.debug(('  continue_print', r))
 
         if '0000' == r[0]:
             fgNoErr = True
@@ -1026,10 +1027,10 @@ def cmdChek(aNalichnye, tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
                     if nalichnye < chekSum:
                         nalichnye = chekSum
 
-                data = closeCheck(ser, nalichnye, skidka,
+                data = close_check(ser, nalichnye, skidka,
                                   u'', summa2, summa3, summa4)
                 r = (data[1], resultKKM.get(data[1], data[1]))
-                # logging.debug(('  closeCheck:', r))
+                # logging.debug(('  close_check:', r))
 
     except Exception, e:
         LASTRESPONS = None
@@ -1039,15 +1040,15 @@ def cmdChek(aNalichnye, tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
     finally:
         if fgClose and ser:
             ser.close()
-    # logging.debug(('check return:', r))
+    # logging.debug(('receipt return:', r))
     return r
 
 
-def cmdChekReturn(tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
+def return_receipt(tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
     """
         Запрос «Фискальный документ»: Возврат
         Пример использования
-        cmdChek([100, (u'Товар1', 1, 1.23),
+        receipt([100, (u'Товар1', 1, 1.23),
         (u'Товар2', 2, 0.60), (u'Товар3', 3, 0.41)], 7)
     """
     global LASTRESPONS, PORT, BAUDRATE
@@ -1061,14 +1062,14 @@ def cmdChekReturn(tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
             fgClose = True
             ser = serial.Serial(port, BAUDRATE, timeout=1)
 
-        # r = continuePrint(ser)
+        # r = continue_print(ser)
 
         fgReturn = True
-        data = openCheck(ser, fg_return=fgReturn)
+        data = open_receipt(ser, fg_return=fgReturn)
         r = (data[1], resultKKM.get(data[1], data[1]))
         if '0000' != r[0]:
-            r = cmdCancel(ser, passwd)
-            data = openCheck(ser, fg_return=fgReturn)
+            r = cancel_receipt(ser, passwd)
+            data = open_receipt(ser, fg_return=fgReturn)
             r = (data[1], resultKKM.get(data[1], data[1]))
 
         if '0000' == r[0]:
@@ -1090,7 +1091,7 @@ def cmdChekReturn(tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
                 if nalichnye < chekSum:
                     nalichnye = chekSum
 
-                data = closeCheck(ser, nalichnye, skidka)
+                data = close_check(ser, nalichnye, skidka)
                 r = (data[1], resultKKM.get(data[1], data[1]))
     except Exception, e:
         LASTRESPONS = None
@@ -1102,7 +1103,7 @@ def cmdChekReturn(tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
     return r
 
 
-def cmdCachReg(ser=None, passwd=PASSWORD, regNumber=None):
+def get_cash_register(ser=None, passwd=PASSWORD, regNumber=None):
     """
         Команда: Запрос денежного регистра
         1AH. Длина сообщения: 6 байт.
@@ -1122,15 +1123,15 @@ def cmdCachReg(ser=None, passwd=PASSWORD, regNumber=None):
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
     except:
         rr = None
     return rr
 
 
-def cmdOperReg(ser=None, passwd=PASSWORD, regNumber=None):
+def oper_register(ser=None, passwd=PASSWORD, regNumber=None):
     """
         Команда: Запрос операционного регистра
         1BH. Длина сообщения: 6 байт.
@@ -1148,9 +1149,9 @@ def cmdOperReg(ser=None, passwd=PASSWORD, regNumber=None):
     global LASTRESPONS
     rr = None
     try:
-        rr = sendCmd(cmd, fmtA, ser)
+        rr = send_cmd(cmd, fmtA, ser)
         if 0 == rr[0]:
-            rr = getRespons()
+            rr = get_response()
             # if '0000' == rr[0]:
             #    r = LASTRESPONS[2]
     except:
@@ -1158,10 +1159,10 @@ def cmdOperReg(ser=None, passwd=PASSWORD, regNumber=None):
     return rr
 
 
-def getOperReg():
+def get_oper_register():
     number_cheks = []
     for num in range(148, 152):
-        cmdOperReg(regNumber=num)
+        oper_register(regNumber=num)
         logging.debug(('registr', num, ':', LASTRESPONS))
         s = LASTRESPONS[2][::-1]
         tt = ''
@@ -1175,7 +1176,7 @@ def getOperReg():
     return number_cheks
 
 
-def getCachReg():
+def get_cash():
     """Получаем выручку"""
     import decimal
     # номера денежного регистра
@@ -1186,7 +1187,7 @@ def getCachReg():
     stryc = []
     #  for num in range(0,64):
     #  # запрос к денежому регистру (num - номером денежного регистра)
-    #  res = cmdCachReg(regNumber = 193)
+    #  res = get_cash_register(regNumber = 193)
     #  logging.debug(('registr 193', LASTRESPONS[2]))
     #  s = LASTRESPONS[2][::-1]
     #  logging.debug(('s', s))
@@ -1204,7 +1205,7 @@ def getCachReg():
         dic = []
         for num in number:
             # запрос к денежому регистру (num - номером денежного регистра)
-            cmdCachReg(regNumber=num)
+            get_cash_register(regNumber=num)
             logging.debug(('registr', num, ':', LASTRESPONS[2]))
             s = LASTRESPONS[2][::-1]
             tt = ''
@@ -1230,7 +1231,7 @@ def getCachReg():
 
 if __name__=="__main__":
 
-    #PORT, BAUDRATE = scanKkm()
+    #PORT, BAUDRATE = scan_kkm()
     #logging.debug((PORT, BAUDRATE))
     #sys.exit()
 
@@ -1241,36 +1242,36 @@ if __name__=="__main__":
                         #  writeTimeout=1)
 # 
     #  # Вычитываем ответ предыдущей команды
-    #  data = readA(ser)
+    #  data = read_answer(ser)
     #  if data:
         #  logging.debug((repr(data)))
 
     #logging.debug((cmdBeep()))
-    #logging.debug((cmdSkip(True)))
-    #logging.debug((cmdSumIN(123.45)))
-    #logging.debug((cmdSumOUT(123.45)))
+    #logging.debug((skip(True)))
+    #logging.debug((put_sum(123.45)))
+    #logging.debug((take_sum(123.45)))
     #logging.debug((cmdX()))
     #logging.debug((cmdZ()))
 
-    #logging.debug((cmdDrawer()))
-    #logging.debug((cmdCopyDoc()))
-    #logging.debug((cmdCancel()))
-    #logging.debug((continuePrint(ser)))
+    #logging.debug((open_drawer()))
+    #logging.debug((retry_doc()))
+    #logging.debug((cancel_receipt()))
+    #logging.debug((continue_print(ser)))
 
-    #logging.debug((cmdGetKkmNo()))
-    #logging.debug((cmdGetDT()))
+    #logging.debug((get_kkm_no()))
+    #logging.debug((get_datetime()))
 
-    #err, note = cmdSetDT()
+    #err, note = set_datetime()
     #logging.debug((err, note))
 
-    #logging.debug((cmdPrint(u'Привет4')))
+    #logging.debug((writeln(u'Привет4')))
 
     #if data:
     #    logging.debug((data, resultKKM.get(data[1], data[1])))
 
-    #err, note = cmdChek(100, [(u'Товар1', 1, 1.23), (u'Товар2', 2, 0.60), (u'Товар3', 3, 0.41)], 7)
+    #err, note = receipt(100, [(u'Товар1', 1, 1.23), (u'Товар2', 2, 0.60), (u'Товар3', 3, 0.41)], 7)
     #logging.debug((err, note))
 
-    #err, note = cmdChekReturn([(u'Товар1', 1, 1.23), (u'Товар2', 2, 0.60), (u'Товар3', 3, 0.41)], 7)
+    #err, note = return_receipt([(u'Товар1', 1, 1.23), (u'Товар2', 2, 0.60), (u'Товар3', 3, 0.41)], 7)
     #logging.debug((err, note))
     pass
