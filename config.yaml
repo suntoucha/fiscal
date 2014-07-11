@@ -7,8 +7,11 @@ COMMON:
     formatters:
       simple:
         format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-      default:
+      default_old:
         format: '%(asctime)s %(levelname)-8s %(name)-15s %(message)s'
+        datefmt: '%Y-%m-%d %H:%M:%S'
+      default:
+        format: '%(levelname)-8s %(message)s'
         datefmt: '%Y-%m-%d %H:%M:%S'
     handlers:
       stdout:
@@ -30,6 +33,10 @@ COMMON:
       '':
         level: DEBUG
         handlers: [stdout]
+      kkm:
+        level: DEBUG
+        handlers: [stdout]
+
 
 
 DEVELOPMENT:
@@ -37,5 +44,8 @@ DEVELOPMENT:
   LOG_CFG:
     loggers:
       '':
+        level: DEBUG
+        handlers: [rainbow]
+      kkm:
         level: DEBUG
         handlers: [rainbow]
