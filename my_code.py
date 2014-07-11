@@ -2,10 +2,33 @@
 import api
 import serial
 import kkmdrv
-import re
+# import re
+
 import settings
+import cdxSHTRIX as kkm
+# import cdxATOL as kkm
+# import cdxGEPARD as kkm
+kkm.PORT = '/dev/tty.fiscal'
+
 
 if 1:
+    # kkm.cmdSumIN(123.45)
+    # for i in range(10):
+    #     kkm.cmdPrint(u'Привет4')
+
+    # kkm.cmdPrint(u'Привет4')
+    # kkm.cmdSumIN(123.45)
+    # kkm.beep()
+    # kkm.cmdGetDT()
+    # kkm.cmdGetKkmNo()
+    kkm = kkm.cmdChek(
+        100,
+        [(u'Товар1', 1, 1.23),
+         (u'Товар2', 2, 0.60),
+         (u'Товар3', 3, 0.41)],
+        7)
+
+if 0:
     func_name = 'hello'
     data = {
         'name': 'zoi',
@@ -14,7 +37,6 @@ if 1:
 
     if hasattr(api,func_name):
         print getattr(api, func_name)(**data)
-
 
     ser = serial.Serial(
         "/dev/tty.fiscal", 115200,
@@ -27,21 +49,34 @@ if 1:
                             kkmdrv.DEFAULT_ADM_PASSWORD,
                             ser)
 
+    kkm = kkmdrv.KKM(
+        ser,
+        password=kkmdrv.DEFAULT_PASSWORD,
+    )
+    kkm.test()
     # print sfrk.getStatusString()
-    print sfrk.kkm.cashIncome(234.0)
+    # sfrk.kkm.cashIncome(23.0)
+
+    # print sfrk.kkm.cashIncome(234.0)
+    # print sfrk.kkm.cashIncome(234.0)
+    # print kkm.__clearAnswer()
+    # print dir(sfrk.kkm)
+    # print sfrk.kkm.__sendCommand(0x00, kkmdrv.DEFAULT_PASSWORD)
+    # print sfrk.kkm.__readAnswer()
 
 
-def camel_to_underscore(name):
-    name = name[0].lower() + name[1:]
-    camel_pat = re.compile(r'([A-Z])')
-    return camel_pat.sub(lambda x: '_' + x.group(1).lower(), name)
+if 0:
+    def camel_to_underscore(name):
+        name = name[0].lower() + name[1:]
+        camel_pat = re.compile(r'([A-Z])')
+        return camel_pat.sub(lambda x: '_' + x.group(1).lower(), name)
 
-def underscore_to_camel(name):
-    under_pat = re.compile(r'_([a-z])')
-    return under_pat.sub(lambda x: x.group(1).upper(), name)
+    def underscore_to_camel(name):
+        under_pat = re.compile(r'_([a-z])')
+        return under_pat.sub(lambda x: x.group(1).upper(), name)
 
-print camel_to_underscore('ReportWClose')
-print underscore_to_camel('report_w_close')
+    print camel_to_underscore('ReportWClose')
+    print underscore_to_camel('report_w_close')
 
 
 if 0:

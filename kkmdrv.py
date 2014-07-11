@@ -2,6 +2,7 @@
 # -*- coding: utf8 -*-
 import serial
 import string, time
+from pprint import pprint as pp
 from struct import pack, unpack
 
 """
@@ -31,6 +32,127 @@ CHANGELOG
           1745145
           Now work with fload same as string
 
+
+    static char *errmsg[] =
+                {
+                    "No errors found",													//00
+                    "Fiscal memory or timer error",											//01
+                    "Fiscal memory 1 is missing",												//02
+                    "Fiscal memory 2 is missing",												//03
+                    "Invalid arguments",													//04
+                    "There is no queried data",												//05
+                    "Output mode",													//06
+                    "Invalid arguments for the particular device",									//07
+                    "Invalid command for the particular device",										//08
+                    "Invalid command lengh",												//09
+                    "Invalid data format",												//0a
+                    "",															//0b
+                    "",															//0c
+                    "",															//0d
+                    "",															//0e
+                    "",															//0f
+                    "",															//10
+                    "No License",														//11
+                    "Factory number is already entered",											//12
+                    "Current date is less then last operation date",									//13
+                    "Subtotal memory is full",												//14
+                    "Shift ia opened",													//15
+                    "Shift is not opened",												//16
+                    "The number of the first shift larger then the last shift number",							//17
+                    "The date of the first shift is later then the last shift date",							//18
+                    "There is no queried data",												//19
+                    "",															//1a
+                    "Factory number is not entered",											//1b
+                    "There is corrupt data in the sertain range",										//1c
+                    "The last subtotal record is corrupt",										//1d
+                    "Registration limit is achieved",											//1e
+                    "Register memory is not present",											//1f
+                    "Money register overflow while adding data",										//20
+                    "Register value is less",												//21
+                    "Invalid date",													//22
+                    "",															//23
+                    "",															//24
+                    "",															//25
+                    "",															//26
+                    "",															//27
+                    "",															//28
+                    "",															//29
+                    "",															//2a
+                    "",															//2b
+                    "",															//2c
+                    "",															//2d
+                    "",															//2e
+                    "",															//2f
+                    "",															//30
+                    "",															//31
+                "",															//32
+                "Invalid command parameters",												//33
+                "There is no queried data",												//34
+                "Invalid command parameter for the current settings",									//35
+                "Invalid command parameters for the particular device",								//36
+                "Invalid command for the particular device",										//37
+                "User memory error",													//38
+                "Internal software error",												//39
+                "",															//3a
+                "",															//3b
+                "Operation is not completed. Shift is opened",									//3c
+                "Operation is not completed. Shift is not opened",									//3d
+                "",															//3e
+                "",															//3f
+                "",															//40
+                "",															//41
+                "",															//42
+                "",															//43
+                "",															//44
+                "",															//45
+                "",															//46
+                "",															//47
+                "Subtotal overflow",													//48
+                "Operation is not completed with this type of opened bill",								//49
+                "Operation is not completed. Bill is not opened",									//4a
+                "Bill's buffer is full",												//4b
+                "",															//4c
+                "Non cash summ is greater of bill summ",										//4d
+                "Shift is active more then 24 hours",											//4e
+                "Invalid password",													//4f
+                "Printing the previous command",											//50
+                "",															//51
+                "",															//52
+                "",															//53
+                "",															//54
+                "Operation is not completed. Bill is closed",										//55
+                "",															//56
+                "",															//57
+                "Waiting for printing command continuing",										//58
+                "Document is opened by another operator",										//59
+                "Discount is greater of the proffit",											//5a
+                "",															//5b
+                "",															//5c
+                "Table is not defined",												//5d
+                "",															//5e
+                "",															//5f
+                "",															//60
+                "",															//61
+                "",															//62
+                "",															//63
+                "Fiscal memory is not present",											//64
+                "",															//65
+                "",															//66
+                "Error connecting to the device",											//67
+                "",															//68
+                "",															//69
+                "",															//6a
+                "Bill tape is out",													//6b
+                "Controll tape is out",												//6c
+                "",															//6d
+                "",															//6e
+                "",															//6f
+                "Fiscal memory overflow",												//70
+                "Knife error",													//71
+                "Invalid command in this submode",											//72
+                "Invalid command in this mode",											//73
+                "Base memory error"													//74
+            };
 """
 
 VERSION = 0.04
@@ -202,9 +324,12 @@ class kkmException(Exception):
     def __init__(self, value):
         self.value = value
         self.s = {
-            0x4e: "Смена превысила 24 часа (Закройте смену с гашением) (ошибка 0x4e)",\
-            0x4f: "Неверный пароль (ошибка 0x4f)",\
+            0x4e: "Смена превысила 24 часа (Закройте смену с гашением) (ошибка 0x4e)",
+            0x4f: "Неверный пароль (ошибка 0x4f)",
             0x73: "Команда не поддерживается в данном режиме (отмените печать чека или продолжите её или закончилась смена, надо осуществить гашение.) (ошибка 0x73)",
+
+
+
         }.get(value, 'Неизвестная ошибка %x' % value)
 
     def __str__(self):
@@ -215,7 +340,7 @@ class kkmException(Exception):
 
 
 class KKM:
-    def __init__(self,conn, password=DEFAULT_PASSWORD):
+    def __init__(self, conn, password=DEFAULT_PASSWORD):
         self.conn = conn
         self.password = password
         if self.__checkState() != NAK:
@@ -232,9 +357,9 @@ class KKM:
         repl = self.conn.read(1)
         if not self.conn.isOpen():
             raise RuntimeError("Serial port closed unexpectly")
-        if repl==NAK:
+        if repl == NAK:
             return NAK
-        if repl==ACK:
+        if repl == ACK:
             return ACK
         raise RuntimeError("Unknown answer")
 
@@ -253,9 +378,9 @@ class KKM:
                 time.sleep(MIN_TIMEOUT * 2)
                 if a != STX:
                     raise RuntimeError("Something wrong")
-                length = ord(self.conn.read(1))
+                # length = ord(self.conn.read(1))
                 time.sleep(MIN_TIMEOUT * 2)
-                data = self.conn.read(length+1)
+                # data = self.conn.read(length + 1)
                 self.conn.write(ACK)
                 time.sleep(MIN_TIMEOUT * 2)
                 return 2
@@ -263,38 +388,49 @@ class KKM:
                 raise RuntimeError("Something wrong")
         n = 0
         while n < MAX_TRIES and oneRound() != 1:
-            n+=1
-        if n>=MAX_TRIES:
+            n += 1
+        if n >= MAX_TRIES:
             return 1
         return 0
 
     def __readAnswer(self):
         """Считать ответ ККМ"""
         a = self.conn.read(1)
-        if a==ACK:
+        if a == ACK:
             a = self.conn.read(1)
-            if a==STX:
-             length   = ord(self.conn.read(1))
-             cmd      = self.conn.read(1)
-             errcode  = self.conn.read(1)
-             data     = self.conn.read(length-2)
-             if length-2!=len(data):
-                #print hexStr(data)
-                  self.conn.write(NAK)
-                  raise RuntimeError("Length (%i) not equal length of data (%i)" % (length,  len(data)))
-             rcrc   = self.conn.read(1)
-             mycrc = LRC(chr(length)+cmd+errcode+data)
-             if rcrc!=mycrc:
-                 self.conn.write(NAK)
-                 raise RuntimeError("Wrong crc %i must be %i " % (mycrc, ord(rcrc)))
-             self.conn.write(ACK)
-             self.conn.flush()
-             time.sleep(MIN_TIMEOUT*2)
-             if ord(errcode)!=0:
-                 raise kkmException(ord(errcode))
-             return {'cmd':cmd, 'errcode':ord(errcode), 'data':data}
+            if a == STX:
+                length = ord(self.conn.read(1))
+                cmd = self.conn.read(1)
+                errcode = self.conn.read(1)
+                data = self.conn.read(length - 2)
+                if length - 2 != len(data):
+                    # print hexStr(data)
+                    self.conn.write(NAK)
+                    raise RuntimeError(
+                        "Length (%i) not equal length of data (%i)" % (length,
+                                                                       len(data))
+                    )
+                rcrc = self.conn.read(1)
+                mycrc = LRC(chr(length) + cmd + errcode + data)
+                if rcrc != mycrc:
+                    self.conn.write(NAK)
+                    raise RuntimeError(
+                        "Wrong crc %i must be %i " % (mycrc, ord(rcrc))
+                    )
+                self.conn.write(ACK)
+                self.conn.flush()
+                time.sleep(MIN_TIMEOUT * 2)
+                if ord(errcode) != 0:
+                    raise kkmException(ord(errcode))
+                return {
+                    'cmd': cmd,
+                    'errcode': ord(errcode),
+                    'data': data
+                }
             else:
-                raise RuntimeError("a!=STX %s %s" % (hex(ord(a)), hex(ord(STX))))
+                raise RuntimeError(
+                    "a!=STX %s %s" % (hex(ord(a)), hex(ord(STX)))
+                )
         elif a == NAK:
             return None
         else:
@@ -307,9 +443,21 @@ class KKM:
         length = 1 + len(params)
         content = chr(length) + data
         crc = LRC(content)
+        print '>>' + STX + content + crc
         self.conn.write(STX + content + crc)
         self.conn.flush()
         return OK
+
+    def test(self):
+        self.__clearAnswer()
+        # bin_summ = pack('l', float2100int(37)).ljust(5, chr(0x0))
+
+        # self.__sendCommand(0x03, self.password + chr(37))
+        # self.__sendCommand(0x17, self.password + 'dsfkjsfklsdjlksdjflksdjf[')
+        # self.__sendCommand(0x25, self.password + chr(0))
+        self._printString(self, text=u"ssdsfsdfsdkfjsdkfjsdssdf")
+        self.__readAnswer()
+
 
     def Beep(self):
         """Гудок"""
@@ -323,7 +471,8 @@ class KKM:
         self.__clearAnswer()
         self.__sendCommand(0x10, self.password)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.LAST_ERROR = errcode
         ba = byte2array(ord(data[2]))
         ba.extend(byte2array(ord(data[1])))
@@ -359,7 +508,8 @@ class KKM:
         self.__clearAnswer()
         self.__sendCommand(0x11, self.password)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         print "data len = ", len(data)
         ba = byte2array(ord(data[12]))
         ba.extend(byte2array(ord(data[11])))
@@ -410,7 +560,8 @@ class KKM:
         bin_summ = pack('l', float2100int(count)).ljust(5, chr(0x0))
         self.__sendCommand(0x50, self.password + bin_summ)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        data = a['data']
         self.DOC_NUM = unpack('i', data[0] + data[1] + chr(0x0) + chr(0x0))[0]
 
     def cashOutcome(self, count):
@@ -419,7 +570,8 @@ class KKM:
         bin_summ = pack('l', float2100int(count)).ljust(5, chr(0x0))
         self.__sendCommand(0x51, self.password + bin_summ)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        data = a['data']
         self.OP_CODE = ord(data[0])
         self.DOC_NUM = unpack('i', data[1] + data[2] + chr(0x0) + chr(0x0))[0]
 
@@ -439,10 +591,10 @@ class KKM:
             raise RuntimeError("Check type may be only 0, 1, 2, 3 value")
         self.__sendCommand(0x8D, self.password + chr(ctype))
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         return errcode
-
 
     def Sale(self, count, price, text=u"",
              department=1, taxes=[0, 0, 0, 0][:]):
@@ -488,7 +640,8 @@ class KKM:
         #        time.sleep(1)
         a = self.__readAnswer()
         #        time.sleep(0.5)
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         return errcode
 
@@ -531,12 +684,13 @@ class KKM:
         self.__sendCommand(0x82, self.password + bcount + bprice + bdep + btaxes + btext)
 #        time.sleep(0.8)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         return errcode
 
-
-    def closeCheck(self, summa, text=u"", summa2=0, summa3=0, summa4=0, sale=0, taxes=[0, 0, 0, 0][:]):
+    def closeCheck(self, summa, text=u"", summa2=0,
+                   summa3=0, summa4=0, sale=0, taxes=[0, 0, 0, 0][:]):
         """
         Команда:     85H. Длина сообщения: 71 байт.
              • Пароль оператора (4 байта)
@@ -582,9 +736,11 @@ class KKM:
         bsale = pack('h', float2100int(sale))
         btaxes = "%s%s%s%s" % tuple(map(lambda x: chr(x), taxes))
         btext = text.encode('cp1251').ljust(40, chr(0x0))
-        self.__sendCommand(0x85, self.password + bsumma + bsumma2 + bsumma3 + bsumma4 + bsale + btaxes + btext)
+        self.__sendCommand(0x85, self.password + bsumma + bsumma2 +
+                           bsumma3 + bsumma4 + bsale + btaxes + btext)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         # Сдачу я не считаю....
         time.sleep(0.5)  # Тут не успевает иногда
@@ -595,7 +751,8 @@ class KKM:
         self.__clearAnswer()
         self.__sendCommand(0x40, admpass)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         return errcode
 
@@ -604,7 +761,8 @@ class KKM:
         self.__clearAnswer()
         self.__sendCommand(0x41, admpass)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         return errcode
 
@@ -622,7 +780,8 @@ class KKM:
             raise RuntimeError("cutType myst be only 0 or 1 ")
         self.__sendCommand(0x25, self.password + chr(cutType))
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         return errcode
 
@@ -637,7 +796,8 @@ class KKM:
         self.__clearAnswer()
         self.__sendCommand(0xB0, self.password)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         return errcode
 
@@ -653,7 +813,8 @@ class KKM:
         self.__clearAnswer()
         self.__sendCommand(0x8C, self.password)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         return errcode
 
@@ -667,7 +828,8 @@ class KKM:
         self.__clearAnswer()
         self.__sendCommand(0x88, self.password)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         return errcode
 
@@ -680,9 +842,11 @@ class KKM:
              • Код ошибки (1 байт)
         """
         self.__clearAnswer()
-        self.__sendCommand(0x22, admpass + chr(day) + chr(month) + chr(year-2000))
+        self.__sendCommand(0x22,
+                           admpass + chr(day) + chr(month) + chr(year - 2000))
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode = a['errcode']
         return errcode
 
     def acceptSetDate(self, admpass, day, month, year):
@@ -696,7 +860,8 @@ class KKM:
         self.__clearAnswer()
         self.__sendCommand(0x23, admpass + chr(day) + chr(month) + chr(year - 2000))
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode = a['errcode']
         return errcode
 
     def setTime(self, admpass, hour, minutes, secs):
@@ -708,9 +873,11 @@ class KKM:
                  • Код ошибки (1 байт)
         """
         self.__clearAnswer()
-        self.__sendCommand(0x21, admpass + chr(hour) + chr(minutes) + chr(secs))
+        self.__sendCommand(0x21,
+                           admpass + chr(hour) + chr(minutes) + chr(secs))
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode = a['errcode']
         return errcode
 
     def setTableValue(self, admpass, table, row, field, value):
@@ -720,9 +887,11 @@ class KKM:
         """
         self.__clearAnswer()
         drow = pack('l', row).ljust(2, chr(0x0))[:2]
-        self.__sendCommand(0x1e, admpass + chr(table) + drow + chr(field) + value)
+        self.__sendCommand(0x1e,
+                           admpass + chr(table) + drow + chr(field) + value)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode = a['errcode']
         return errcode
 
     def printString(self, check_ribbon=True, control_ribbon=True, text=u""):
@@ -751,7 +920,8 @@ class KKM:
         self.__sendCommand(0x17, self.password + bufStr(flag) + s)
         #        time.sleep(0.5)
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         return errcode
 
@@ -773,7 +943,8 @@ class KKM:
                            self.password + bufStr(flag, row_count))
 
         a = self.__readAnswer()
-        cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        # cmd, errcode, data = (a['cmd'], a['errcode'], a['data'])
+        errcode, data = (a['errcode'], a['data'])
         self.OP_CODE = ord(data[0])
         return errcode
 
@@ -851,16 +1022,13 @@ class ShtrihFRK(ShtrihFRKDummy):
     def getStatusString(self):
         """Вернет строку описывающую режим и состояние ККМ"""
         srq = self.kkm.statusRequest()
+        pp(srq)
         s = ''
-        s += ' Режим: %s' % FP_MODES_DESCR.get(
-            srq['mode'],
-            ' Режим неизвестен'
-        )
-        s += ' Подрежим: %s' % FR_SUBMODES_DESCR.get(srq['mode'], {}).get(
-            srq['submode'],
-            ' Подрежим неизвестен'
-        )
-
+        # s +=' Режим: %s' % FP_MODES_DESCR.get(srq['mode'], ' Режим неизвестен')
+        # s += ' Подрежим: %s' % FR_SUBMODES_DESCR.get(srq['mode'], {}).get(
+        #     srq['submode'],
+        #     ' Подрежим неизвестен'
+        # )
         if srq['errcode'] == 0:
             s += ' Без ошибок'
         else:

@@ -24,3 +24,5 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3405", GROUP="fisc
 после этого у меня появилас ссылка /dev/tty.fiscal и с ней теперь всё ок
 такие пироги
 
+
+> sudo apt-get install lpr
