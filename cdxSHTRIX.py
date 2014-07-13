@@ -333,7 +333,7 @@ def get_response(filename=None, data=None):
         return -1, u'нет связи'
 
 
-def put_sum(nalichka, ser=None, passwd=PASSWORD):
+def cash_income(summ, ser=None, passwd=PASSWORD):
     """Команда: Внесение
     50H. Длина сообщения: 10 байт.
     Пароль оператора (4 байта)
@@ -344,7 +344,7 @@ def put_sum(nalichka, ser=None, passwd=PASSWORD):
     Порядковый номер оператора (1 байт) 1...30
     Сквозной номер документа (2 байта)
     """
-    cmd = pack('<BilB', 0x50, passwd, float2100int(nalichka), 0)
+    cmd = pack('<BilB', 0x50, passwd, float2100int(summ), 0)
     fmtA = '<BH'
 
     global LASTRESPONS
@@ -360,8 +360,8 @@ def put_sum(nalichka, ser=None, passwd=PASSWORD):
     return rr
 
 
-def take_sum(nalichka, ser=None, passwd=PASSWORD):
-    cmd = pack('<BilB', 0x51, passwd, float2100int(nalichka), 0)
+def cash_outcome(summ, ser=None, passwd=PASSWORD):
+    cmd = pack('<BilB', 0x51, passwd, float2100int(summ), 0)
     fmtA = '<BH'
 
     global LASTRESPONS
@@ -377,7 +377,7 @@ def take_sum(nalichka, ser=None, passwd=PASSWORD):
     return rr
 
 
-def cmdX(ser=None, passwd=PASSWORD):
+def report_x(ser=None, passwd=PASSWORD):
     """Команда: Суточный отчет без гашения
     40H. Длина сообщения: 5 байт.
     Пароль администратора или системного администратора (4 байта)
@@ -386,7 +386,7 @@ def cmdX(ser=None, passwd=PASSWORD):
     Код ошибки (1 байт)
     Порядковый номер оператора (1 байт) 29, 30
     """
-    cancel_receipt(ser, passwd)
+    cancel_check(ser, passwd)
 
     cmd = pack('<Bi', 0x40, passwd)
     fmtA = '<B'
@@ -404,7 +404,7 @@ def cmdX(ser=None, passwd=PASSWORD):
     return rr
 
 
-def cmdZ(ser=None, passwd=PASSWORD):
+def report_z(ser=None, passwd=PASSWORD):
     """Команда: Суточный отчет с гашением
     41H. Длина сообщения: 5 байт.
     Пароль администратора или системного администратора (4 байта)
@@ -486,7 +486,7 @@ def retry_doc(ser=None, passwd=PASSWORD):
     return rr
 
 
-def cancel_receipt(ser=None, passwd=PASSWORD):
+def cancel_check(ser=None, passwd=PASSWORD):
     """Команда: Аннулирование чека
     88H. Длина сообщения: 5 байт.
     Пароль оператора (4 байта)
@@ -766,7 +766,7 @@ def writeln(text, ser=None, passwd=PASSWORD):
     return rr
 
 
-def open_receipt(ser, fg_return=False, passwd=PASSWORD):
+def open_check(ser, ctype=0, fg_return=None, passwd=PASSWORD):
     """Команда:     8DH. Длина сообщения: 6 байт.
              • Пароль оператора (4 байта)
              • Тип документа (1 байт): 0 – продажа;
@@ -777,12 +777,15 @@ def open_receipt(ser, fg_return=False, passwd=PASSWORD):
              • Код ошибки (1 байт)
              • Порядковый номер оператора (1 байт) 1...30
     """
-    if fg_return:
+    if fg_return is True:
         ctype = 2
-    else:
+    elif fg_return is False:
         ctype = 0
+
+
     cmd = pack('<BiB', 0x8D, passwd, ctype)
     fmtA = '<B'
+
 
     return exec_cmd(ser, cmd, fmtA)
 
@@ -824,7 +827,7 @@ def sale(ser, amount, price, text=u"", department=0,
     return exec_cmd(ser, cmd, fmtA)
 
 
-def close_check(ser, nalichka, skidka=0, text=u"", summa2=0, summa3=0, summa4=0,
+def close_check(ser, summa, skidka=0, text=u"", summa2=0, summa3=0, summa4=0,
                taxes=[0, 0, 0, 0][:], passwd=PASSWORD):
     """
         Команда:     85H. Длина сообщения: 71 байт.
@@ -847,7 +850,7 @@ def close_check(ser, nalichka, skidka=0, text=u"", summa2=0, summa3=0, summa4=0,
     """
     cmd = pack(
         '<BilclclclchBBBB40s', 0x85, passwd,
-        float2100int(nalichka), '\x00',
+        float2100int(summa), '\x00',
         float2100int(summa2), '\x00',
         float2100int(summa3), '\x00',
         float2100int(summa4), '\x00',
@@ -956,11 +959,11 @@ def scan_kkm():
             sys.stdout.flush()
 
 
-def receipt(aNalichnye, tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
+def check(aNalichnye, tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
     """
         Запрос «Фискальный документ»: Продажа
         Пример использования
-        receipt(100, [(u'Товар1', 1, 1.23),
+        check(100, [(u'Товар1', 1, 1.23),
         (u'Товар2', 2, 0.60),
         (u'Товар3', 3, 0.41)], 7)
     """
@@ -995,13 +998,13 @@ def receipt(aNalichnye, tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
             ser = serial.Serial(port, BAUDRATE, timeout=1)
 
         fgReturn = False
-        data = open_receipt(ser, fg_return=fgReturn)
+        data = open_check(ser, fg_return=fgReturn)
         r = (data[1], resultKKM.get(data[1], data[1]))
         logging.debug(('  openCheck1:', r))
         if '0000' != r[0]:
-            r = cancel_receipt(ser, passwd)
+            r = cancel_check(ser, passwd)
             logging.debug(('  1:', r))
-            data = open_receipt(ser, fg_return=fgReturn)
+            data = open_check(ser, fg_return=fgReturn)
             r = (data[1], resultKKM.get(data[1], data[1]))
             logging.debug(('  openCheck2:', r))
             # r = continue_print(ser)
@@ -1040,15 +1043,15 @@ def receipt(aNalichnye, tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
     finally:
         if fgClose and ser:
             ser.close()
-    # logging.debug(('receipt return:', r))
+    # logging.debug(('check return:', r))
     return r
 
 
-def return_receipt(tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
+def return_check(tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
     """
         Запрос «Фискальный документ»: Возврат
         Пример использования
-        receipt([100, (u'Товар1', 1, 1.23),
+        check([100, (u'Товар1', 1, 1.23),
         (u'Товар2', 2, 0.60), (u'Товар3', 3, 0.41)], 7)
     """
     global LASTRESPONS, PORT, BAUDRATE
@@ -1065,11 +1068,11 @@ def return_receipt(tovary, skidka=0, ser=None, port=None, passwd=PASSWORD):
         # r = continue_print(ser)
 
         fgReturn = True
-        data = open_receipt(ser, fg_return=fgReturn)
+        data = open_check(ser, fg_return=fgReturn)
         r = (data[1], resultKKM.get(data[1], data[1]))
         if '0000' != r[0]:
-            r = cancel_receipt(ser, passwd)
-            data = open_receipt(ser, fg_return=fgReturn)
+            r = cancel_check(ser, passwd)
+            data = open_check(ser, fg_return=fgReturn)
             r = (data[1], resultKKM.get(data[1], data[1]))
 
         if '0000' == r[0]:
@@ -1131,7 +1134,7 @@ def get_cash_register(ser=None, passwd=PASSWORD, regNumber=None):
     return rr
 
 
-def oper_register(ser=None, passwd=PASSWORD, regNumber=None):
+def open_register(ser=None, passwd=PASSWORD, regNumber=None):
     """
         Команда: Запрос операционного регистра
         1BH. Длина сообщения: 6 байт.
@@ -1162,7 +1165,7 @@ def oper_register(ser=None, passwd=PASSWORD, regNumber=None):
 def get_oper_register():
     number_cheks = []
     for num in range(148, 152):
-        oper_register(regNumber=num)
+        open_register(regNumber=num)
         logging.debug(('registr', num, ':', LASTRESPONS))
         s = LASTRESPONS[2][::-1]
         tt = ''
@@ -1248,14 +1251,14 @@ if __name__=="__main__":
 
     #logging.debug((cmdBeep()))
     #logging.debug((skip(True)))
-    #logging.debug((put_sum(123.45)))
-    #logging.debug((take_sum(123.45)))
-    #logging.debug((cmdX()))
-    #logging.debug((cmdZ()))
+    #logging.debug((cash_income(123.45)))
+    #logging.debug((cash_outcome(123.45)))
+    #logging.debug((report_x()))
+    #logging.debug((report_z()))
 
     #logging.debug((open_drawer()))
     #logging.debug((retry_doc()))
-    #logging.debug((cancel_receipt()))
+    #logging.debug((cancel_check()))
     #logging.debug((continue_print(ser)))
 
     #logging.debug((get_kkm_no()))
@@ -1269,9 +1272,9 @@ if __name__=="__main__":
     #if data:
     #    logging.debug((data, resultKKM.get(data[1], data[1])))
 
-    #err, note = receipt(100, [(u'Товар1', 1, 1.23), (u'Товар2', 2, 0.60), (u'Товар3', 3, 0.41)], 7)
+    #err, note = check(100, [(u'Товар1', 1, 1.23), (u'Товар2', 2, 0.60), (u'Товар3', 3, 0.41)], 7)
     #logging.debug((err, note))
 
-    #err, note = return_receipt([(u'Товар1', 1, 1.23), (u'Товар2', 2, 0.60), (u'Товар3', 3, 0.41)], 7)
+    #err, note = return_check([(u'Товар1', 1, 1.23), (u'Товар2', 2, 0.60), (u'Товар3', 3, 0.41)], 7)
     #logging.debug((err, note))
     pass

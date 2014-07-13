@@ -11,9 +11,10 @@ import logging
 import re
 
 import kkmdrv
-import settings
+# import er
 import api
 
+import settings
 
 PASSWORD = "1231231qweqweqwe"
 
@@ -26,12 +27,12 @@ class MyKKMHandler(tornado.web.RequestHandler):
             logging.info(self.request.body)
 
             route = {
-                "check/print/": lambda summ: api.kkm.cashIncome(float(summ)),
-                "check/cancel/": api.kkm.cashOutcome,
+                "cash/income/": api.cash_income,
+                "cash/outcome/": api.cash_outcome,
+                "check/cancel/": api.cancel_check,
                 "report/": api.print_report,
-                # "cash/income/",
-                # "cash/outcome/",
-                # "drawer/open/",
+                "drawer/open/": api.open_drawer,
+                "check/print/": api.print_check,
             }
 
             func_name = path
@@ -44,10 +45,12 @@ class MyKKMHandler(tornado.web.RequestHandler):
             else:
                 raise StandardError('No such method {}'.format(func_name))
 
-            data = json.loads(self.request.body)
+            data = json.loads(self.request.body) if self.request.body else {}
+
             func(**data)
         except Exception as e:
             traceback.print_exc()
+            logging.exception(e)
             self.error(msg=str(e))
         else:
             self.success()
@@ -79,8 +82,9 @@ class MyKKMHandler(tornado.web.RequestHandler):
 class KKMHandler(tornado.web.RequestHandler):
 
     def initialize(self):
-        self.kkm = self.application.kkm
-        api.kkm = self.application.kkm
+        # self.kkm = self.application.kkm
+        # api.kkm = self.application.kkm
+        pass
 
     def prepare(self):
         password = self.get_argument("password", default=None)
@@ -184,12 +188,12 @@ class Application(tornado.web.Application):
         handlers = [
             # (r"/api2/([^/]+)/?", My),
             (r"/api2/(.*$)", MyKKMHandler),
-            (r"/api/check/print/", PrintCheck),
-            (r"/api/check/cancel/", CancelCheck),
-            (r"/api/report/", PrintReport),
             (r"/api/cash/income/", CashIncome),
             (r"/api/cash/outcome/", CashOutcome),
+            (r"/api/check/cancel/", CancelCheck),
+            (r"/api/check/print/", PrintCheck),
             (r"/api/drawer/open/", OpenCashDrawer),
+            (r"/api/report/", PrintReport),
 
         ]
         conf = dict(
@@ -216,15 +220,9 @@ class Application(tornado.web.Application):
                                     ser)
             # sfrk.kkm.reportWClose(kkmdrv.DEFAULT_ADM_PASSWORD)
 
-            api.kkm = sfrk.kkm
+            # api.kkm = sfrk.kkm
 
         tornado.web.Application.__init__(self, handlers, **conf)
-
-
-
-
-
-
 
 if __name__ == "__main__":
     application = Application()

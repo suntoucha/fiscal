@@ -8,7 +8,7 @@ import settings
 import cdxSHTRIX as kkm
 # import cdxATOL as kkm
 # import cdxGEPARD as kkm
-kkm.PORT = '/dev/tty.fiscal'
+kkm.PORT = settings.KKM['PORT']
 
 
 if 1:
@@ -21,15 +21,18 @@ if 1:
     # kkm.beep()
     # kkm.cmdGetDT()
     # kkm.cmdGetKkmNo()
-    kkm = kkm.receipt(
-        100,
-        [
-            (u'Товар1', 1, 1.23),
-            (u'Товар2', 2, 0.60),
-            (u'Товар3', 3, 0.41)
-        ],
-        7
-    )
+
+    kkm.get_kkm_no()
+
+    # kkm = kkm.receipt(
+    #     100,
+    #     [
+    #         (u'Товар1', 1, 1.23),
+    #         (u'Товар2', 2, 0.60),
+    #         (u'Товар3', 3, 0.41)
+    #     ],
+    #     7
+    # )
 
 if 0:
     func_name = 'hello'

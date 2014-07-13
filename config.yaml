@@ -1,6 +1,9 @@
 COMMON:
   DEBUG: False
   TESTING: False
+  KKM:
+    PORT: /dev/tty.fiscal
+    BAUDRATE: 9600
   LOG_CFG:
     version: 1
     disable_existing_loggers: False
@@ -33,6 +36,9 @@ COMMON:
       '':
         level: DEBUG
         handlers: [stdout]
+      root:
+        level: DEBUG
+        handlers: [stdout]
       kkm:
         level: DEBUG
         handlers: [stdout]
@@ -44,8 +50,5 @@ DEVELOPMENT:
   LOG_CFG:
     loggers:
       '':
-        level: DEBUG
-        handlers: [rainbow]
-      kkm:
         level: DEBUG
         handlers: [rainbow]

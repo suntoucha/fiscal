@@ -25,4 +25,17 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3405", GROUP="fisc
 такие пироги
 
 
-> sudo apt-get install lpr
+Kill process that raises Device or resource busy: '/dev/ttyUSB0'?
+
+```
+$ sudo fuser -k /dev/tty.fiscal
+```
+
+
+Основные команды
+```
+$ http post localhost:8888/api2/cash/income/ summ:=23
+$ http post localhost:8888/api2/cash/outcome/ summ:=23
+$ http post localhost:8888/api2/report/
+$ http post localhost:8888/api2/report/ close:=1
+```
