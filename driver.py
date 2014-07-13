@@ -5,6 +5,7 @@ import serial
 import struct
 from struct import pack, unpack
 from binascii import b2a_hex, hexlify
+import inspect
 
 import settings
 import logging
@@ -183,6 +184,55 @@ ERROR_CODES = {
     0xC7: "Поле не редактируется в данном режиме",
 }
 
+FP_MODES_DESCR = {
+    0: 'Принтер в рабочем режиме.',
+    1: 'Выдача данных.',
+    2: 'Открытая смена, 24 часа не кончились.',
+    3: 'Открытая смена, 24 часа кончились.',
+    4: 'Закрытая смена.',
+    5: 'Блокировка по неправильному паролю налогового инспектора.',
+    6: 'Ожидание подтверждения ввода даты.',
+    7: 'Разрешение изменения положения десятичной точки.',
+    8: 'Открытый документ:',
+    9: ('Режим разрешения технологического обнуления.'
+        'В этот режим ККМ переходит по включению питания'
+        'если некорректна информация в энергонезависимом ОЗУ ККМ.'),
+    10: 'Тестовый прогон.',
+    11: 'Печать полного фис. отчета.',
+    12: 'Печать отчёта ЭКЛЗ.',
+    13: 'Работа с фискальным подкладным документом:',
+    14: 'Печать подкладного документа.',
+    15: 'Фискальный подкладной документ сформирован.'
+}
+
+FR_SUBMODES_DESCR = {
+    8: {
+        0: 'Продажа',
+        1: 'Покупка',
+        2: 'Возврат продажи',
+        3: 'Возврат покупки'
+    },
+    13: {
+        0: 'Продажа (открыт)',
+        1: 'Покупка (открыт)',
+        2: 'Возврат продажи (открыт)',
+        3: 'Возврат покупки (открыт)'
+    },
+    14: {
+        0: 'Ожидание загрузки.',
+        1: 'Загрузка и позиционирование.',
+        2: 'Позиционирование.',
+        3: 'Печать.',
+        4: 'Печать закончена.',
+        5: 'Выброс документа.',
+        6: 'Ожидание извлечения.'},
+}
+
+
+class KKMError(Exception):
+    pass
+
+
 def LRC(data, lenData=None):
     """Подсчет CRC"""
     result = 0
@@ -193,14 +243,11 @@ def LRC(data, lenData=None):
         result = result ^ ord(c)
     return chr(result)
 
-
 def float2100int(f, digits=2):
     mask = "%." + str(digits) + 'f'
     s = mask % f
     return int(s.replace('.', ''))
 
-class KKMError(Exception):
-    pass
 
 class Driver(object):
     """docstring for Driver"""
@@ -211,7 +258,7 @@ class Driver(object):
                                  bytesize=serial.EIGHTBITS,
                                  parity=serial.PARITY_NONE,
                                  stopbits=serial.STOPBITS_ONE,
-                                 timeout=1)
+                                 timeout=2)
         # self.ser_io = io.TextIOWrapper(io.BufferedRWPair(self.ser, self.ser, 1),
         #                                newline='\r',
         #                                line_buffering=True)
@@ -230,7 +277,7 @@ class Driver(object):
             logging.debug('read %d bytes data = [%s]', l, hexlify(data))
 
         if l != 0:
-            raise None
+            raise KKMError('Read Timeout')
 
         return data
 
@@ -306,89 +353,96 @@ class Driver(object):
         self.raw(cmd)
         while True:
             data = self.read_answer()
-            if data:
-                cmd_answer = data[0]
-                if cmd_answer != cmd[0]:
-                    # Не разобрался пока с магией внизу но походу
-                    # это должно решить вопросх
-                    logging.warning(
-                        'Получил ответ от другой команды =\ %s != %s попробую еще раз',
-                        hexlify(cmd_answer), hexlify(cmd[0])
-                    )
-                    continue
+            if not data:
+                continue
 
-                error_code = data[1]
-                error_code_str = ERROR_CODES.get(
-                    ord(error_code),
-                    'Неизвестная ошибка %s' % error_code
+            cmd_answer = data[0]
+            if cmd_answer != cmd[0]:
+                # Не разобрался пока с магией внизу но походу
+                # это должно решить вопросх
+                logging.warning(
+                    'Получил ответ от другой команды =\ %s != %s попробую еще раз',
+                    hexlify(cmd_answer), hexlify(cmd[0])
                 )
-                logging.debug('>> result %s %s',
-                              hexlify(error_code),
-                              error_code_str)
+                continue
 
-                if 0x00 == ord(error_code):
-                    res = (True, 'Ok', data[2:])
-                    break
+            error_code = data[1]
+            error_code_str = ERROR_CODES.get(
+                ord(error_code),
+                'Неизвестная ошибка %s' % error_code
+            )
+            logging.debug('>> result %s %s',
+                          hexlify(error_code),
+                          error_code_str)
 
-                # TODO разобраться потом что это за магия
-                # Идет печать предыдущей команды
-                elif 0x50 == ord(error_code):
-                    time.sleep(0.25)
-                    continue
-                # Ожидание команды продолжения печати
-                elif 0x58 == ord(error_code):
-                    time.sleep(0.25)
+            if 0x00 == ord(error_code):
+                res = (True, 'Ok', data[2:])
+                break
 
-                    self.raw(pack('<Bi', 0xB0, PASSWORD))
-                    # закоментирую это по идее просто получу ответ
-                    # от этой команды
-                    # и буду ждать ответ от своей
-                    # data = self.read_answer()
-                    continue
-                else:
-                    res = (False,
-                           '%s %s' % (hexlify(error_code),
-                                      error_code_str),
-                           data[2:])
-                    break
+            # TODO разобраться потом что это за магия
+            # Идет печать предыдущей команды
+            elif 0x50 == ord(error_code):
+                time.sleep(0.25)
+                continue
+            # Ожидание команды продолжения печати
+            elif 0x58 == ord(error_code):
+                time.sleep(0.25)
+
+                self.raw(pack('<Bi', 0xB0, PASSWORD))
+                # закоментирую это по идее просто получу ответ
+                # от этой команды
+                # и буду ждать ответ от своей
+                # data = self.read_answer()
+                continue
+            else:
+                res = (False,
+                       '%s %s' % (hexlify(error_code),
+                                  error_code_str),
+                       data[2:])
+                break
         return res
 
-    def standart_command(self,
-                         num,
-                         req_frm='', req_params=(),
-                         res_frm='', res_params="",
-                         desc=""):
+    def std_cmd(self,
+              num,
+              request_frm='', req_params=(),
+              responce_frm='', res_params="",):
 
         self.ser.flushOutput()
         self.ser.flushInput()
 
-        if desc:
-            logging.info(desc)
+        caller_name = inspect.currentframe().f_back.f_code.co_name
+        if getattr(self, caller_name):
+            logging.debug(getattr(self, caller_name).__doc__)
+
         logging.info('Cmd_0x%x%s' % (num, req_params))
 
         try:
-            cmd = pack('<B', num) + pack(req_frm, *req_params)
+            cmd = pack('<B', num) + pack(request_frm, *req_params)
             is_ok, error_str, data = self.send_cmd(cmd)
         except struct.error as e:
             logging.error(
                 'Неверный формат для упаковки аргументов "%s" "%s" ',
-                req_frm, req_params
+                request_frm, req_params
             )
             logging.error(e)
 
         res = None
+        logging.debug('data_len = %d' % len(data))
+
+        answer_len = struct.calcsize(responce_frm)
         try:
             if res_params:
                 res = namedtuple('cmd_%x' % num, res_params)
-                res = res._make(unpack(res_frm, data))
+                res = res._make(unpack(responce_frm, data[:answer_len]))
                 res = dict(res._asdict())
+                res['_tail'] = data[answer_len:]
             else:
-                res = list(unpack(res_frm, data))
-
+                res = list(unpack(responce_frm, data[:answer_len]))
+                res.append(data[answer_len:])
         except struct.error as e:
             logging.error(
                 'Неверный формат для распаковки ответа "%s" "%s" ',
-                res_frm, hexlify(data)
+                responce_frm, hexlify(data)
             )
             logging.error(e)
 
@@ -403,111 +457,111 @@ class Driver(object):
         # return is_ok, error_str, res
 
     def beep(self):
-        return self.standart_command(
+        """
+        Команда: Гудок
+            13H. Длина сообщения: 5 байт.
+            • Пароль оператора (4 байта)
+            Ответ:
+            13H. Длина сообщения: 3 байта.
+            • Код ошибки (1 байт)
+            • Порядковый номер оператора (1 байт) 1...30
+        """
+        return self.std_cmd(
             0x13,
             '<i', (PASSWORD,),
             '<B', 'byte',
-            """
-            Команда: Гудок
-                13H. Длина сообщения: 5 байт.
-                • Пароль оператора (4 байта)
-                Ответ:
-                13H. Длина сообщения: 3 байта.
-                • Код ошибки (1 байт)
-                • Порядковый номер оператора (1 байт) 1...30
-            """
         )
 
     def cash_income(self, summ):
-        return self.standart_command(
+        """
+            Команда: Внесение
+            50H. Длина сообщения: 10 байт.
+            Пароль оператора (4 байта)
+            Сумма (5 байт)
+            Ответ:
+            50H. Длина сообщения: 5 байт.
+            Код ошибки (1 байт)
+            Порядковый номер оператора (1 байт) 1...30
+            Сквозной номер документа (2 байта)
+        """
+        return self.std_cmd(
             0x50,
             '<ilb', (PASSWORD, float2100int(summ), 0),
             '<BH', '',
-            """
-                Команда: Внесение
-                50H. Длина сообщения: 10 байт.
-                Пароль оператора (4 байта)
-                Сумма (5 байт)
-                Ответ:
-                50H. Длина сообщения: 5 байт.
-                Код ошибки (1 байт)
-                Порядковый номер оператора (1 байт) 1...30
-                Сквозной номер документа (2 байта)
-            """
         )
         # cmd = pack('<BilB', 0x50, PASSWORD, float2100int(summ), 0)
         # is_ok, error_str, data = self.send_cmd(cmd)
         # return is_ok, error_str, unpack('<BH', data)
 
     def cash_outcome(self, summ):
-        return self.standart_command(
+        """
+            Команда: Выплата
+        """
+        return self.std_cmd(
             0x51,
             '<ilb', (PASSWORD, float2100int(summ), 0),
             '<BH', '',
-            """
-                Команда: Выплата
-            """
         )
 
     def cancel_check(self):
-        return self.standart_command(
+        """Команда: Аннулирование чека
+        88H. Длина сообщения: 5 байт.
+        Пароль оператора (4 байта)
+        Ответ:
+        88H. Длина сообщения: 3 байта.
+        Код ошибки (1 байт)
+        Порядковый номер оператора (1 байт) 1...30
+        """
+        return self.std_cmd(
             0x88,
             '<i', (PASSWORD, ),
-            '<', '',
-            """Команда: Аннулирование чека
-            88H. Длина сообщения: 5 байт.
-            Пароль оператора (4 байта)
-            Ответ:
-            88H. Длина сообщения: 3 байта.
-            Код ошибки (1 байт)
-            Порядковый номер оператора (1 байт) 1...30
-            """
+            '<B', 'operator',
         )
 
     def open_drawer(self):
-        return self.standart_command(
+        """ Команда: Открыть денежный ящик
+        28H. Длина сообщения: 6 байт.
+        Пароль оператора (4 байта)
+        Номер денежного ящика (1 байт) 0, 1
+        Ответ:
+        28H. Длина сообщения: 3 байта.
+        Код ошибки (1 байт)
+        Порядковый номер оператора (1 байт) 1...30
+        """
+        return self.std_cmd(
             0x28,
             '<iB', (PASSWORD, 0),
             '<B', 'operator',
-            """ Команда: Открыть денежный ящик
-            28H. Длина сообщения: 6 байт.
-            Пароль оператора (4 байта)
-            Номер денежного ящика (1 байт) 0, 1
-            Ответ:
-            28H. Длина сообщения: 3 байта.
-            Код ошибки (1 байт)
-            Порядковый номер оператора (1 байт) 1...30
-            """
         )
 
     def report_z(self):
-        return self.standart_command(
+        """Команда: Суточный отчет с гашением
+        41H. Длина сообщения: 5 байт.
+        Пароль администратора или системного администратора (4 байта)
+        Ответ:
+        41H. Длина сообщения: 3 байта.
+        Код ошибки (1 байт)
+        Порядковый номер оператора (1 байт) 29, 30
+        """
+        return self.std_cmd(
             0x41,
             '<i', (PASSWORD, ),
             '<B', 'operator',
-            """Команда: Суточный отчет с гашением
-            41H. Длина сообщения: 5 байт.
-            Пароль администратора или системного администратора (4 байта)
-            Ответ:
-            41H. Длина сообщения: 3 байта.
-            Код ошибки (1 байт)
-            Порядковый номер оператора (1 байт) 29, 30
-            """
         )
 
     def report_x(self):
-        return self.standart_command(
+        """Команда: Суточный отчет без гашения
+        40H. Длина сообщения: 5 байт.
+        Пароль администратора или системного администратора (4 байта)
+        Ответ:
+        40H. Длина сообщения: 3 байта.
+        Код ошибки (1 байт)
+        Порядковый номер оператора (1 байт) 29, 30
+        """
+        return self.std_cmd(
             0x40,
             '<i', (PASSWORD, ),
             '<B', 'operator',
-            """Команда: Суточный отчет без гашения
-            40H. Длина сообщения: 5 байт.
-            Пароль администратора или системного администратора (4 байта)
-            Ответ:
-            40H. Длина сообщения: 3 байта.
-            Код ошибки (1 байт)
-            Порядковый номер оператора (1 байт) 29, 30
-            """
         )
 
     def print_report(self, close=None):
@@ -517,28 +571,40 @@ class Driver(object):
             kkm.report_x()
 
     def open_check(self, ctype=0, fg_return=None, passwd=PASSWORD):
+        """
+        Команда:
+            8DH. Длина сообщения: 6 байт.
+            • Пароль оператора (4 байта)
+            • Тип документа (1 байт): 0 – продажа;
+            1 – покупка;
+            2 – возврат продажи;
+            3 – возврат покупки
+            Ответ:       8DH. Длина сообщения: 3 байта.
+            • Код ошибки (1 байт)
+            • Порядковый номер оператора (1 байт) 1...30
+        """
         if fg_return is True:
             ctype = 2
-        elif fg_return is False:
+        else:
             ctype = 0
-        return self.standart_command(
+        return self.std_cmd(
             0x8d,
             '<iB', (PASSWORD, ctype),
             '<B', 'operator',
-            """Команда:     8DH. Длина сообщения: 6 байт.
-                     • Пароль оператора (4 байта)
-                     • Тип документа (1 байт): 0 – продажа;
-                                               1 – покупка;
-                                               2 – возврат продажи;
-                                               3 – возврат покупки
-                Ответ:       8DH. Длина сообщения: 3 байта.
-                     • Код ошибки (1 байт)
-                     • Порядковый номер оператора (1 байт) 1...30
-        """
         )
 
     def sale(self, amount, price, text=u"", department=0,
              taxes=None, fg_return=False, passwd=PASSWORD):
+        """Команда:     8DH. Длина сообщения: 6 байт.
+        • Пароль оператора (4 байта)
+        • Тип документа (1 байт): 0 – продажа;
+        1 – покупка;
+        2 – возврат продажи;
+        3 – возврат покупки
+        Ответ:       8DH. Длина сообщения: 3 байта.
+        • Код ошибки (1 байт)
+        • Порядковый номер оператора (1 байт) 1...30
+        """
         if taxes is None:
             taxes = [0, 0, 0, 0]
 
@@ -547,7 +613,7 @@ class Driver(object):
         else:
             cmd_num = 0x80  # Продажа
 
-        return self.standart_command(
+        return self.std_cmd(
             cmd_num,
             '<ilclcBBBBB40s', (PASSWORD,
                                float2100int(amount) * 10,
@@ -559,23 +625,32 @@ class Driver(object):
                                text[:40].encode('cp1251').ljust(40, '\x00')
                                ),
             '<B', 'operator',
-            """Команда:     8DH. Длина сообщения: 6 байт.
-            • Пароль оператора (4 байта)
-            • Тип документа (1 байт): 0 – продажа;
-            1 – покупка;
-            2 – возврат продажи;
-            3 – возврат покупки
-            Ответ:       8DH. Длина сообщения: 3 байта.
-            • Код ошибки (1 байт)
-            • Порядковый номер оператора (1 байт) 1...30
-            """
         )
 
     def close_check(self, summa, discount=0, text=u"",
                     summa2=0, summa3=0, summa4=0,
                     taxes=[0, 0, 0, 0][:], passwd=PASSWORD):
 
-        data = self.standart_command(
+        """
+            Команда:     85H. Длина сообщения: 71 байт.
+                 • Пароль оператора (4 байта)
+                 • Сумма наличных (5 байт) 0000000000...9999999999
+                 • Сумма типа оплаты 2 (5 байт) 0000000000...9999999999
+                 • Сумма типа оплаты 3 (5 байт) 0000000000...9999999999
+                 • Сумма типа оплаты 4 (5 байт) 0000000000...9999999999
+                 • Скидка/Надбавка(в случае отрицательного значения) в % на чек от 0 до 99,99
+                   % (2 байта со знаком) -9999...9999
+                 • Налог 1 (1 байт) «0» – нет, «1»...«4» – налоговая группа
+                 • Налог 2 (1 байт) «0» – нет, «1»...«4» – налоговая группа
+                 • Налог 3 (1 байт) «0» – нет, «1»...«4» – налоговая группа
+                 • Налог 4 (1 байт) «0» – нет, «1»...«4» – налоговая группа
+                 • Текст (40 байт)
+            Ответ:       85H. Длина сообщения: 8 байт.
+                 • Код ошибки (1 байт)
+                 • Порядковый номер оператора (1 байт) 1...30
+                 • Сдача (5 байт) 0000000000...9999999999
+        """
+        data = self.std_cmd(
             0x85,
             '<ilclclclchBBBB40s', (PASSWORD,
                                    float2100int(summa), '\x00',
@@ -587,31 +662,12 @@ class Driver(object):
                                    text[:40].encode('cp1251').ljust(40, '\x00')
                                    ),
             '<Blx', 'operator renting',
-            """
-                Команда:     85H. Длина сообщения: 71 байт.
-                     • Пароль оператора (4 байта)
-                     • Сумма наличных (5 байт) 0000000000...9999999999
-                     • Сумма типа оплаты 2 (5 байт) 0000000000...9999999999
-                     • Сумма типа оплаты 3 (5 байт) 0000000000...9999999999
-                     • Сумма типа оплаты 4 (5 байт) 0000000000...9999999999
-                     • Скидка/Надбавка(в случае отрицательного значения) в % на чек от 0 до 99,99
-                       % (2 байта со знаком) -9999...9999
-                     • Налог 1 (1 байт) «0» – нет, «1»...«4» – налоговая группа
-                     • Налог 2 (1 байт) «0» – нет, «1»...«4» – налоговая группа
-                     • Налог 3 (1 байт) «0» – нет, «1»...«4» – налоговая группа
-                     • Налог 4 (1 байт) «0» – нет, «1»...«4» – налоговая группа
-                     • Текст (40 байт)
-                Ответ:       85H. Длина сообщения: 8 байт.
-                     • Код ошибки (1 байт)
-                     • Порядковый номер оператора (1 байт) 1...30
-                     • Сдача (5 байт) 0000000000...9999999999
-            """
         )
         if data and 'renting' in data:
             data['renting'] = data['renting'] / 100.0
         return data
 
-    def print_check(self, cash, items=None, mode=''):
+    def print_check(self, cash, items=None, mode='', nds=0):
         if not items:
             items = []
 
@@ -619,6 +675,14 @@ class Driver(object):
             cash,
             [tuple(map(i.get, ['text', 'qty', 'price'])) for i in items]
         ))
+        if nds > 0:
+            if 0:
+                # Включаем начисление налогов на ВСЮ операцию чека
+                kkm.set_table_value(1, 1, 17, chr(0x1))
+                # Включаем печатать налоговые ставки и сумму налога
+                kkm.set_table_value(1, 1, 19, chr(0x2))
+
+            kkm.set_table_value(6, 2, 1, pack('l', nds * 100)[:2])
 
         try:
             self.open_check(ctype=0)
@@ -647,6 +711,159 @@ class Driver(object):
             self.cancel_check()
             raise
 
+    def get_state(self,):
+        """
+            Команда:
+            11H. Длина сообщения: 5 байт.
+            • Пароль оператора (4 байта)
+            Ответ:
+            11H. Длина сообщения: 48 байт.
+            • Код ошибки (1 байт)
+            • Порядковый номер оператора (1 байт) 1...30
+            • Версия ПО ФР (2 байта)
+            • Сборка ПО ФР (2 байта)
+            • Дата ПО ФР (3 байта) ДД-ММ-ГГ
+            • Номер в зале (1 байт)
+            • Сквозной номер текущего документа (2 байта)
+            • Флаги ФР (2 байта)
+            • Режим ФР (1 байт)
+            • Подрежим ФР (1 байт)
+            • Порт ФР (1 байт)
+            • Версия ПО ФП (2 байта)
+            • Сборка ПО ФП (2 байта)
+            • Дата ПО ФП (3 байта) ДД-ММ-ГГ
+            • Дата (3 байта) ДД-ММ-ГГ
+            • Время (3 байта) ЧЧ-ММ-СС
+            • Флаги ФП (1 байт)
+            • Заводской номер (4 байта)
+            • Номер последней закрытой смены (2 байта)
+            • Количество свободных записей в ФП (2 байта)
+            • Количество перерегистраций (фискализаций) (1 байт)
+            • Количество оставшихся перерегистраций (фискализаций) (1 байт)
+            • ИНН (6 байт)
+        """
+        r = [
+            ('B', 'operator'),     # "Порядковый номер оператора (1 байт) 1...30",
+            ('H', 'fr_ver'),     # "Версия ПО ФР (2 байта)",
+            ('H', 'fr_build'),     # "Сборка ПО ФР (2 байта)",
+            ('3s', 'fr_date'),     # "Дата ПО ФР (3 байта) ДД-ММ-ГГ",
+            ('B', 'room_num'),     # "Номер в зале (1 байт)",
+            ('H', 'doc_num'),     # "Сквозной номер текущего документа (2 байта)",
+            ('H', 'fr_flags'),     # "Флаги ФР (2 байта)",
+            ('B', 'mode'),     # "Режим ФР (1 байт)",
+            ('B', 'submode'),     # "Подрежим ФР (1 байт)",
+            ('B', 'fr_port'),     # "Порт ФР (1 байт)",
+            ('H', 'fp_ver'),     # "Версия ПО ФП (2 байта)",
+            ('H', 'fp_build'),     # "Сборка ПО ФП (2 байта)",
+            ('3s', 'fp_date'),     # "Дата ПО ФП (3 байта) ДД-ММ-ГГ",
+            ('3s', 'date'),     # "Дата (3 байта) ДД-ММ-ГГ",
+            ('3s', 'time'),     # "Время (3 байта) ЧЧ-ММ-СС",
+            ('B', 'flags_fp'),     # "Флаги ФП (1 байт)",
+            ('L', 'fuctory_number'),     # "Заводской номер (4 байта)",
+            ('H', 'last_closed_tour'),     # "Номер последней закрытой смены (2 байта)",
+            ('H', 'free_fp_records'),     # "Количество свободных записей в ФП (2 байта)",
+            ('B', 'register_count'),     # "Количество перерегистраций (фискализаций) (1 байт)",
+            ('B', 'register_count_left'),     # "Количество оставшихся перерегистраций (фискализаций) (1 байт)"
+            ('6s', 'inn'),     # "ИНН (6 байт)",
+        ]
+        res = self.std_cmd(
+            0x11,
+            '<i', (PASSWORD, ),
+            '<' + ''.join([i[0] for i in r]),
+            '' + ' '.join([i[1] for i in r]),
+        )
+        res['fp_date'] = '%02i.%02i.20%02i' % tuple(bytearray(res['fp_date']))
+        res['fr_date'] = '%02i.%02i.20%02i' % tuple(bytearray(res['fr_date']))
+        res['date'] = '%02i.%02i.20%02i' % tuple(bytearray(res['date']))
+        res['time'] = '%02i.%02i.%02i' % tuple(bytearray(res['time']))
+
+        res['mode_str'] = ' Режим: %s' % FP_MODES_DESCR.get(res['mode'], 'Режим неизвестен')
+        res['submode_str']  = ' Подрежим: %s' % FR_SUBMODES_DESCR.get(res['mode'], {}).get(res['submode'], 'Подрежим не предусмотрен')
+
+        bits = bin(res['fr_flags']).lstrip('0b').rjust(16, '0')
+        flags = [b == '1' for b in bits]
+
+        res['fr_flags'] = dict(zip(
+            [
+                'roll_oper_log',  # 0 – Рулон операционного журнала (0 – нет, 1 – есть)
+                'roll_check_tape',  # 1 – Рулон чековой ленты (0 – нет, 1 – есть)
+                'top_sensor_doc',  # 2 – Верхний датчик подкладного документа (0 – нет, 1 – да)
+                'lower_sensor_doc',  # 3 – Нижний датчик подкладного документа (0 – нет, 1 – да)
+                'deciminal_point,  '# 4 – Положение десятичной точки (0 – 0 знаков, 1 – 2 знака)
+                'ELKZ',   # 5 – ЭКЛЗ (0 – нет, 1 – есть)
+                'optical_sensor_oper_log',   # 6 – Оптический датчик операционного журнала (0 – бумаги нет, 1 – бумага есть)
+                'optical_sensor_check_tape', # 7 – Оптический датчик чековой ленты (0 – бумаги нет, 1 – бумага есть)
+                'thermal_track_control_tape', # 8 – Рычаг термоголовки контрольной ленты (0 – поднят, 1 – опущен)
+                'thermal_track_control_tape', # 9 – Рычаг термоголовки чековой ленты (0 – поднят, 1 – опущен)
+                'is_up', # 10 – Крышка корпуса ФР (0 – опущена, 1 – поднята)
+                'dawler', # 11 – Денежный ящик (0 – закрыт, 1 – окрыт)
+                'right_sensor_failure', # 12 – Отказ правого датчика принтера (0 – нет, 1 – да)
+                'left_sensor_failure', # 13 – Отказ левого датчика принтера (0 – нет, 1 – да)
+                'EKLZ_almost_full', # 14 – ЭКЛЗ почти заполнена (0 – нет, 1 – да)
+                'accurancy', # 15а – Увеличенная точность количества (0 – нормальная точность, 1 – увеличенная
+                             # точность) [для ККМ без ЭКЛЗ]
+                             # 15б – Буфер принтера непуст (0 – пуст, 1 – непуст)
+            ],
+            flags
+        ))
+
+        # print res
+
+        return res
+
+    def set_table_value(self, table, row, field, value):
+        """
+        Записать значение в таблицу, ряд, поле
+        поля бывают бинарные и строковые, поэтому value
+        делаем в исходном виде
+        Команда:
+            1EH. Длина сообщения: (9+X) байт.
+            • Пароль системного администратора (4 байта)
+            • Таблица (1 байт)
+            • Ряд (2 байта)
+            • Поле (1 байт)
+            • Значение (X байт) до 40 байт
+            Ответ:
+            1EH. Длина сообщения: 2 байта.
+            • Код ошибки (1 байт)
+        """
+        drow = pack('l', row).ljust(2, chr(0x0))[:2]
+        assert drow == pack('<H', row)
+        return self.std_cmd(
+            0x1e,
+            '<iBHB%ds' % len(value), (PASSWORD,
+                                      table,
+                                      row,  # drow
+                                      field,
+                                      value),
+            '<', '',
+        )
+
+    def get_table_value(self, table, row, field):
+        """
+            Чтение таблицы
+            Команда:
+            1FH. Длина сообщения: 9 байт.
+                • Пароль системного администратора (4 байта)
+                • Таблица (1 байт)
+                • Ряд (2 байта)
+                • Поле (1 байт)
+            Ответ:
+                1FH. Длина сообщения: (2+X) байт.
+                • Код ошибки (1 байт)
+                • Значение (X байт) до 40 байт
+        """
+        drow = pack('l', row).ljust(2, chr(0x0))[:2]
+        assert drow == pack('<H', row)
+        return self.std_cmd(
+            0x1f,
+            '<iBHB', (PASSWORD,
+                      table,
+                      row,
+                      field),
+            '<', '',
+        )
+
     def close(self):
         self.ser.close()
 
@@ -657,6 +874,16 @@ if __name__ == '__main__':
     kkm = Driver(settings.KKM['PORT'],
                  settings.KKM['BAUDRATE'])
     time.sleep(1)
+
+    # kkm.get_state()
+    # nds = 4
+    # # Включаем начисление налогов на ВСЮ операцию чека
+    # kkm.open_check()
+    # kkm.set_table_value(1, 1, 17, chr(0x1))
+    # # Включаем печатать налоговые ставки и сумму налога
+    # kkm.set_table_value(1, 1, 19, chr(0x2))
+    # kkm.set_table_value(6, 2, 1, pack('l', nds * 100)[:2])
+    # kkm.close_check()
 
     # for i in range(2):
     #     for i in range(2):
@@ -676,8 +903,25 @@ if __name__ == '__main__':
         dict(qty=2, price=3, text='afff')
     ]
 
-    kkm.open_check()
-    kkm.print_check(2000, items)
+    # kkm.open_check()
+    # kkm.print_check(2000, items, nds=20)
+    nds = 20
+    # print kkm.get_table_value(6, 1, 1)
+    # kkm.set_table_value(6, 1, 1, pack('l', nds * 100)[:2])
+    # print kkm.get_table_value(6, 1, 1)
+
+    # kkm.set_table_value(1, 1, 17, chr(0x1))
+    # Включаем печатать налоговые ставки и сумму налога
+    # kkm.set_table_value(1, 1, 19, chr(0x2))
+
+    # kkm.get_table_value(1, 1, 19)
+    # kkm.get_table_value(1, 1, 19)
+    kkm.get_table_value(6, 2, 1)
+    kkm.get_table_value(6, 2, 2)
+
+    # kkm.set_table_value(6, 1, 1, pack('>H', 500))
+    # kkm.get_table_value(6, 1, 1)
+
     # for item in items:
     #     kkm.sale(
     #         item['qty'],
