@@ -229,7 +229,7 @@ FR_SUBMODES_DESCR = {
 }
 
 
-class KKMError(Exception):
+class Error(Exception):
     pass
 
 
@@ -242,6 +242,7 @@ def LRC(data, lenData=None):
     for c in data:
         result = result ^ ord(c)
     return chr(result)
+
 
 def float2100int(f, digits=2):
     mask = "%." + str(digits) + 'f'
@@ -259,9 +260,6 @@ class Driver(object):
                                  parity=serial.PARITY_NONE,
                                  stopbits=serial.STOPBITS_ONE,
                                  timeout=2)
-        # self.ser_io = io.TextIOWrapper(io.BufferedRWPair(self.ser, self.ser, 1),
-        #                                newline='\r',
-        #                                line_buffering=True)
         self.ser.flushOutput()
         self.ser.flushInput()
 
@@ -277,7 +275,7 @@ class Driver(object):
             logging.debug('read %d bytes data = [%s]', l, hexlify(data))
 
         if l != 0:
-            raise KKMError('Read Timeout')
+            raise Error('Read Timeout')
 
         return data
 
@@ -376,7 +374,7 @@ class Driver(object):
                           error_code_str)
 
             if 0x00 == ord(error_code):
-                res = (True, 'Ok', data[2:])
+                res = (True, 'Ok', 0, data[2:])
                 break
 
             # TODO разобраться потом что это за магия
@@ -396,35 +394,35 @@ class Driver(object):
                 continue
             else:
                 res = (False,
-                       '%s %s' % (hexlify(error_code),
-                                  error_code_str),
+                       '0x%s %s' % (hexlify(error_code), error_code_str),
+                       '0x%s' % hexlify(error_code),
                        data[2:])
                 break
         return res
 
-    def std_cmd(self,
-              num,
-              request_frm='', req_params=(),
-              responce_frm='', res_params="",):
+    def std_cmd(self, num,
+                request_frm='', req_params=(),
+                responce_frm='', res_params="",):
 
         self.ser.flushOutput()
         self.ser.flushInput()
 
         caller_name = inspect.currentframe().f_back.f_code.co_name
-        if getattr(self, caller_name):
+        if hasattr(self, caller_name):
             logging.debug(getattr(self, caller_name).__doc__)
 
         logging.info('Cmd_0x%x%s' % (num, req_params))
 
         try:
             cmd = pack('<B', num) + pack(request_frm, *req_params)
-            is_ok, error_str, data = self.send_cmd(cmd)
+            is_ok, error_str, error_code, data = self.send_cmd(cmd)
         except struct.error as e:
             logging.error(
                 'Неверный формат для упаковки аргументов "%s" "%s" ',
                 request_frm, req_params
             )
             logging.error(e)
+            raise
 
         res = None
         logging.debug('data_len = %d' % len(data))
@@ -453,7 +451,7 @@ class Driver(object):
         if is_ok:
             return res
         else:
-            raise KKMError(error_str)
+            raise Error(error_str, error_code)
         # return is_ok, error_str, res
 
     def beep(self):
@@ -562,6 +560,30 @@ class Driver(object):
             0x40,
             '<i', (PASSWORD, ),
             '<B', 'operator',
+        )
+
+    def _dont_care_get_type(self):
+        """Команда: Суточный отчет без гашения
+        Получить тип устройства
+        Команда:
+            FCH. Длина сообщения: 1 байт.
+        Ответ:
+            FCH. Длина сообщения: (8+X) байт.
+            • Код ошибки (1 байт)
+            • Тип устройства (1 байт) 0...255
+            • Подтип устройства (1 байт) 0...255
+            • Версия протокола для данного устройства (1 байт) 0...255
+            • Подверсия протокола для данного устройства (1 байт) 0...255
+            • Модель устройства (1 байт) 0...255
+            • Язык устройства (1 байт) 0...255 русский – 0; английский – 1;
+            • Название устройства – строка символов в кодировке WIN1251. Количество
+            байт, отводимое под название устройства, определяется в каждом конкретном
+            случае самостоятельно разработчиками устройства (X байт)
+        """
+        return self.std_cmd(
+            0xfc,
+            '<i', (PASSWORD, ),
+            '<B', 'type subtype protocolv subprotocolv model lang',
         )
 
     def print_report(self, close=None):
@@ -676,24 +698,37 @@ class Driver(object):
             [tuple(map(i.get, ['text', 'qty', 'price'])) for i in items]
         ))
         if nds > 0:
-            if 1:
+            if 0:
                 # Включаем начисление налогов на ВСЮ операцию чека
                 kkm.set_table_value(1, 1, 17, chr(0x1))
                 # Включаем печатать налоговые ставки и сумму налога
                 kkm.set_table_value(1, 1, 19, chr(0x2))
                 pass
 
-            self.set_table_value(6, 2, 1, pack('H', nds * 100))
-            self.set_table_value(6, 2, 2, u'НДС'.encode('cp1251'))
+            self.set_table_value(6, 1, 1, pack('H', 50 * 100))
+            self.set_table_value(6, 1, 2, u'НДС-2'.encode('cp1251'))
+
+            # self.set_table_value(6, 2, 1, pack('H', nds * 100))
+            self.set_table_value(6, 2, 1, pack('H', 10 * 100))
+            self.set_table_value(6, 2, 2, u'НДС-1'.encode('cp1251'))
 
         try:
-            self.open_check(ctype=0)
+            # self.open_check(ctype=0)
+            self.open_check(fg_return=True)
             for item in items:
                 self.sale(
                     item['qty'],
                     item['price'],
                     item['text'][:40],
-                    taxes=[2, 0, 0, 0]
+                    taxes=[1, 0, 0, 0],
+                    fg_return=True,
+                )
+                self.sale(
+                    item['qty'],
+                    item['price'],
+                    item['text'][:40],
+                    taxes=[2, 0, 0, 0],
+                    fg_return=True,
                 )
             if mode == 'plastic':
                 self.close_check(
@@ -709,7 +744,7 @@ class Driver(object):
                     taxes=[2, 0, 0, 0]
                 )
                 self.open_drawer()
-        except KKMError:
+        except Error:
             self.cancel_check()
             raise
 
@@ -761,7 +796,7 @@ class Driver(object):
             ('3s', 'date'),     # "Дата (3 байта) ДД-ММ-ГГ",
             ('3s', 'time'),     # "Время (3 байта) ЧЧ-ММ-СС",
             ('B', 'flags_fp'),     # "Флаги ФП (1 байт)",
-            ('L', 'fuctory_number'),     # "Заводской номер (4 байта)",
+            ('L', 'factory_number'),     # "Заводской номер (4 байта)",
             ('H', 'last_closed_tour'),     # "Номер последней закрытой смены (2 байта)",
             ('H', 'free_fp_records'),     # "Количество свободных записей в ФП (2 байта)",
             ('B', 'register_count'),     # "Количество перерегистраций (фискализаций) (1 байт)",
@@ -817,7 +852,7 @@ class Driver(object):
 
         return res
 
-    def set_table_value(self, table, row, field, value):
+    def set_table_value(self, table, row, field, value, value_format=None):
         """
         Записать значение в таблицу, ряд, поле
         поля бывают бинарные и строковые, поэтому value
@@ -833,15 +868,26 @@ class Driver(object):
             1EH. Длина сообщения: 2 байта.
             • Код ошибки (1 байт)
         """
-        drow = pack('l', row).ljust(2, chr(0x0))[:2]
-        assert drow == pack('<H', row)
+        # drow = pack('l', row).ljust(2, chr(0x0))[:2]
+        # assert drow == pack('<H', row)
+        fmt = '<iBHB'
+        if value_format:
+            value_format = value_format.encode('utf-8')
+            fmt += value_format
+        else:
+            value = value.encode('cp1251')
+            fmt += '%ds' % len(value)
+
+        logging.info('set_table_value')
+        logging.info((table, row, field, value, value_format))
+
         return self.std_cmd(
             0x1e,
-            '<iBHB%ds' % len(value), (PASSWORD,
-                                      table,
-                                      row,  # drow
-                                      field,
-                                      value),
+            fmt, (PASSWORD,
+                  table,
+                  row,  # drow
+                  field,
+                  value),
             '<', '',
         )
 
@@ -947,7 +993,18 @@ class Driver(object):
         self.set_date(date)
         # TODO: вылетает с внутренней ошибкой выяснить
         # это дело в нефискальном режиме или ещё в чём
-        self.set_date_confirm(date)
+        # self.set_date_confirm(date)
+
+    def writeln(self, text):
+        # TODO сделай это 0x17
+        pass
+
+    def set_header(sefl):
+        # TODO установка хедеа просто 4 строки
+        for i in range(11, 15):
+            # kkm.set_table_value(4, 1, i, 'привет '.decode('utf-8').encode('cp1251'))
+            # kkm.set_table_value(4, i, 1, 'zzz' + str(i))
+            kkm.set_table_value(4, i, 1, str(i))
 
 
 if __name__ == '__main__':
@@ -955,18 +1012,60 @@ if __name__ == '__main__':
     logging.debug('common')
     kkm = Driver(settings.KKM['PORT'],
                  settings.KKM['BAUDRATE'])
-    # time.sleep(1)
 
+
+    # for i in range(10):
+    #     flag = 0x0
+    #     flag = flag | 2
+    #     text = '\n' * 10
+    #     # text = text[:40]
+    #     kkm.std_cmd(
+    #         0x17,
+    #         '<iB%ds' % len(text), (PASSWORD, flag, text),
+    #         '<B', 'operator',
+    #     )
+    # exit()
     # kkm.repeat_check()
-    # kkm.set_time()
-    # kkm.set_date()
-    # kkm.set_datetime(date=(20, 3, 3), time=(0, 0, 0))
-    # kkm.repeat_check()
+    kkm.set_time(time=(0, 0, 0))
+    items = [
+        # dict(qty=2, price=30, text=u'пакет травы'),
+        # dict(qty=75, price=70, text=u'таблеток мескалина'),
+        # dict(qty=5, price=70, text=u'кислота'),
+        # dict(qty=1, price=70, text=u'пол солонки кокаина'),
+        # dict(qty=1, price=70, text=u'танквилизаторы всех сортов и расцветок'),
+        # dict(qty=1, price=70, text=u'текила, ром, ящик пива,'),
+        # dict(qty=1, price=70, text=u'пинта чистого эфира и амилнитрит'),
+        dict(qty=1, price=100, text=u'текила, ром, ящик пива,'),
+        # dict(qty=1, price=30, text=u'пинта чистого эфира и амилнитрит'),
+    ]
 
     # kkm.open_check()
-    # kkm.close_check()
+    # kkm.cancel_check()
+    for i in range(11, 15):
+        # kkm.set_table_value(4, 1, i, 'привет '.decode('utf-8').encode('cp1251'))
+        # kkm.set_table_value(4, i, 1, 'zzz' + str(i))
+        kkm.set_table_value(4, i, 1, str(i))
 
-    # kkm.get_state()
+    # kkm.cancel_check()
+    kkm.print_check(20000, items, nds=12)
+    # nds = 20
+
+
+    # kkm.set_date()
+    # kkm.set_datetime(date=(20, 3, 5), time=(19, 55, 0))
+    # kkm.repeat_check()
+
+    # kkm.report_z()
+    # kkm.cancel_check()
+
+    # pp(kkm.get_state())
+
+    # kkm.std_cmd(
+    #     0xfc,
+    #     '<', (),
+    #     '<BBBBBBBB', '',
+    # )
+    # exit()
     # nds = 4
     # # Включаем начисление налогов на ВСЮ операцию чека
     # kkm.open_check()
@@ -989,21 +1088,6 @@ if __name__ == '__main__':
     # kkm.print_report(close=True)
 
     # kkm.close_check(232, discount=2)
-    items = [
-        # dict(qty=2, price=30, text=u'пакет травы'),
-        # dict(qty=75, price=70, text=u'таблеток мескалина'),
-        # dict(qty=5, price=70, text=u'кислота'),
-        # dict(qty=1, price=70, text=u'пол солонки кокаина'),
-        # dict(qty=1, price=70, text=u'танквилизаторы всех сортов и расцветок'),
-        # dict(qty=1, price=70, text=u'текила, ром, ящик пива,'),
-        # dict(qty=1, price=70, text=u'пинта чистого эфира и амилнитрит'),
-        dict(qty=1, price=70, text=u'текила, ром, ящик пива,'),
-        dict(qty=1, price=30, text=u'пинта чистого эфира и амилнитрит'),
-    ]
-
-    # kkm.open_check()
-    kkm.print_check(20000, items, nds=12)
-    nds = 20
     # print kkm.get_table_value(6, 1, 1)
     # kkm.set_table_value(6, 1, 1, pack('l', nds * 100)[:2])
     # print kkm.get_table_value(6, 1, 1)
