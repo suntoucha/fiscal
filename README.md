@@ -39,3 +39,9 @@ $ http post localhost:8888/api2/cash/outcome/ summ:=23
 $ http post localhost:8888/api2/report/
 $ http post localhost:8888/api2/report/ close:=1
 ```
+
+
+что написать что бы поднялось
+```
+$git clone https://github.com/morentharia/fiscal.git
+```
