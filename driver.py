@@ -676,13 +676,15 @@ class Driver(object):
             [tuple(map(i.get, ['text', 'qty', 'price'])) for i in items]
         ))
         if nds > 0:
-            if 0:
+            if 1:
                 # Включаем начисление налогов на ВСЮ операцию чека
                 kkm.set_table_value(1, 1, 17, chr(0x1))
                 # Включаем печатать налоговые ставки и сумму налога
                 kkm.set_table_value(1, 1, 19, chr(0x2))
+                pass
 
-            kkm.set_table_value(6, 2, 1, pack('l', nds * 100)[:2])
+            self.set_table_value(6, 2, 1, pack('H', nds * 100))
+            self.set_table_value(6, 2, 2, u'НДС'.encode('cp1251'))
 
         try:
             self.open_check(ctype=0)
@@ -772,10 +774,14 @@ class Driver(object):
             '<' + ''.join([i[0] for i in r]),
             '' + ' '.join([i[1] for i in r]),
         )
-        res['fp_date'] = '%02i.%02i.20%02i' % tuple(bytearray(res['fp_date']))
-        res['fr_date'] = '%02i.%02i.20%02i' % tuple(bytearray(res['fr_date']))
-        res['date'] = '%02i.%02i.20%02i' % tuple(bytearray(res['date']))
-        res['time'] = '%02i.%02i.%02i' % tuple(bytearray(res['time']))
+        # res['fp_date'] = '%02i.%02i.20%02i' % tuple(bytearray(res['fp_date']))
+        # res['fr_date'] = '%02i.%02i.20%02i' % tuple(bytearray(res['fr_date']))
+        # res['date'] = '%02i.%02i.20%02i' % tuple(bytearray(res['date']))
+        # res['time'] = '%02i.%02i.%02i' % tuple(bytearray(res['time']))
+        res['fp_date'] = tuple(bytearray(res['fp_date']))
+        res['fr_date'] = tuple(bytearray(res['fr_date']))
+        res['date'] = tuple(bytearray(res['date']))
+        res['time'] = tuple(bytearray(res['time']))
 
         res['mode_str'] = ' Режим: %s' % FP_MODES_DESCR.get(res['mode'], 'Режим неизвестен')
         res['submode_str']  = ' Подрежим: %s' % FR_SUBMODES_DESCR.get(res['mode'], {}).get(res['submode'], 'Подрежим не предусмотрен')
@@ -864,8 +870,84 @@ class Driver(object):
             '<', '',
         )
 
-    def close(self):
-        self.ser.close()
+    def repeat_check(self):
+        """Команда:    8CH. Длина сообщения: 5 байт.
+             • Пароль оператора (4 байта)
+        Ответ:      8CH. Длина сообщения: 3 байта.
+             • Код ошибки (1 байт)
+             • Порядковый номер оператора (1 байт) 1...30
+             Команда выводит на печать копию последнего закрытого документа
+                 продажи, покупки, возврата продажи и возврата покупки.
+        """
+        return self.std_cmd(
+            0x8c,
+            '<i', (PASSWORD, ),
+            '<B', 'operator',
+        )
+
+    def get_datetime(self):
+        res = self.get_state()
+        logging.debug('DATE: %02i.%02i.20%02i', *(res['date']))
+        logging.debug('TIME: %02i:%02i:%02i', *(res['time']))
+        return (res['date'], res['time'])
+
+    def set_time(self, time=(19, 55, 0)):
+        """
+            Программирование времени
+            Команда:
+            21H. Длина сообщения: 8 байт.
+            • Пароль системного администратора (4 байта)
+            • Время (3 байта) ЧЧ-ММ-СС
+            Ответ:
+            21H. Длина сообщения: 2 байта.
+            • Код ошибки (1 байт)
+        """
+        return self.std_cmd(
+            0x21,
+            '<iBBB', (PASSWORD, time[0], time[1], time[2]),
+            '', '',
+        )
+
+    def set_date(self, date=(20, 3, 3)):
+        """
+            Программирование даты
+            Команда:
+            22H. Длина сообщения: 8 байт.
+            • Пароль системного администратора (4 байта)
+            • Дата (3 байта) ДД-ММ-ГГ
+            Ответ:
+            22H. Длина сообщения: 2 байта.
+            • Код ошибки (1 байт)
+        """
+        return self.std_cmd(
+            0x22,
+            '<iBBB', (PASSWORD, date[0], date[1], date[2]),
+            '', '',
+        )
+
+    def set_date_confirm(self, date=(20, 3, 3)):
+        """
+            Подтверждение программирования даты
+            Команда:
+            23H. Длина сообщения: 8 байт.
+            • Пароль системного администратора (4 байта)
+            • Дата (3 байта) ДД-ММ-ГГ
+            Ответ:
+            23H. Длина сообщения: 2 байта.
+            • Код ошибки (1 байт)
+        """
+        return self.std_cmd(
+            0x23,
+            '<iBBB', (PASSWORD, date[0], date[1], date[2]),
+            '', '',
+        )
+
+    def set_datetime(self, date, time):
+        self.set_time(time)
+        self.set_date(date)
+        # TODO: вылетает с внутренней ошибкой выяснить
+        # это дело в нефискальном режиме или ещё в чём
+        self.set_date_confirm(date)
 
 
 if __name__ == '__main__':
@@ -873,7 +955,16 @@ if __name__ == '__main__':
     logging.debug('common')
     kkm = Driver(settings.KKM['PORT'],
                  settings.KKM['BAUDRATE'])
-    time.sleep(1)
+    # time.sleep(1)
+
+    # kkm.repeat_check()
+    # kkm.set_time()
+    # kkm.set_date()
+    # kkm.set_datetime(date=(20, 3, 3), time=(0, 0, 0))
+    # kkm.repeat_check()
+
+    # kkm.open_check()
+    # kkm.close_check()
 
     # kkm.get_state()
     # nds = 4
@@ -899,12 +990,19 @@ if __name__ == '__main__':
 
     # kkm.close_check(232, discount=2)
     items = [
-        dict(qty=2, price=3, text='alal'),
-        dict(qty=2, price=3, text='afff')
+        # dict(qty=2, price=30, text=u'пакет травы'),
+        # dict(qty=75, price=70, text=u'таблеток мескалина'),
+        # dict(qty=5, price=70, text=u'кислота'),
+        # dict(qty=1, price=70, text=u'пол солонки кокаина'),
+        # dict(qty=1, price=70, text=u'танквилизаторы всех сортов и расцветок'),
+        # dict(qty=1, price=70, text=u'текила, ром, ящик пива,'),
+        # dict(qty=1, price=70, text=u'пинта чистого эфира и амилнитрит'),
+        dict(qty=1, price=70, text=u'текила, ром, ящик пива,'),
+        dict(qty=1, price=30, text=u'пинта чистого эфира и амилнитрит'),
     ]
 
     # kkm.open_check()
-    # kkm.print_check(2000, items, nds=20)
+    kkm.print_check(20000, items, nds=12)
     nds = 20
     # print kkm.get_table_value(6, 1, 1)
     # kkm.set_table_value(6, 1, 1, pack('l', nds * 100)[:2])
@@ -916,8 +1014,8 @@ if __name__ == '__main__':
 
     # kkm.get_table_value(1, 1, 19)
     # kkm.get_table_value(1, 1, 19)
-    kkm.get_table_value(6, 2, 1)
-    kkm.get_table_value(6, 2, 2)
+    # kkm.get_table_value(6, 2, 1)
+    # kkm.get_table_value(6, 2, 2)
 
     # kkm.set_table_value(6, 1, 1, pack('>H', 500))
     # kkm.get_table_value(6, 1, 1)
