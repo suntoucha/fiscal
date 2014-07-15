@@ -709,7 +709,7 @@ class Driver(object):
             return
 
         for i, t in zip(range(11, 15), text_list):
-            self.set_table_value(4, i, 1, t.decode('utf-8').encode('cp1251'))
+            self.set_table_value(4, i, 1, t.encode('cp1251'))
 
     def print_check(self, cash, items=None,
                     mode='', is_refund=False, taxes=None):

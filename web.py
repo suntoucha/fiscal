@@ -39,14 +39,14 @@ class KKMDriverHandler(tornado.web.RequestHandler):
             logging.exception(e)
             error = {"status": 'error',
                      'errorText': error_str,
-                     'errorCode': error_code}
+                     'errorCode': str(error_code)}
             self.__write(error)
         except Exception as e:
             traceback.print_exc()
             logging.exception(e)
             error = {"status": 'error',
                      'errorText': str(e),
-                     'errorCode': -1}
+                     'errorCode': str(-1)}
             self.__write(error)
         else:
             self.__write({'status': 'ok'})
@@ -59,10 +59,31 @@ class KKMDriverHandler(tornado.web.RequestHandler):
                               encoding='utf-8'))
 
 
+class GetMacAddressHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.set_header("Content-Type", "application/json; charset=utf-8")
+        try:
+            ifname = 'eth0'
+            mac = open('/sys/class/net/%s/address' % ifname).read()
+
+        except Exception as e:
+            traceback.print_exc()
+            logging.exception(e)
+            error = {"status": 'error',
+                     'errorText': str(e),
+                     'errorCode': -1}
+            self.__write(error)
+        else:
+            self.__write({'status': 'ok'})
+        finally:
+            self.finish()
+
+
 class Application(tornado.web.Application):
     def __init__(self):
         handlers = [
             (r"/api/([^/]+)/?", KKMDriverHandler),
+            (r"/mac/?", GetMacAddressHandler),
         ]
         conf = dict(
             template_path='templates',
