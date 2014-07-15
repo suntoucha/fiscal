@@ -711,17 +711,18 @@ class Driver(object):
         for i, t in zip(range(11, 15), text_list):
             self.set_table_value(4, i, 1, t.encode('cp1251'))
 
-    def print_check(self, cash, items=None,
-                    mode='', is_refund=False, taxes=None):
+    def print_check(self, cash, mode, items=None,
+                    is_refund=False, taxes=None):
         # TODO не понятно что за taxes которые закрывают чек
         # так что просто поставлю по умолчанию те что были у типов
         # ну и можно руками ввести
         if mode == 'plastic':
             if taxes is None:
-               taxes = [0, 2, 0, 0]
+                taxes = [0, 2, 0, 0]
 
             self._check(cash, items,
-                        open_check=partial(self.open_check, is_refund=is_refund),
+                        open_check=partial(self.open_check,
+                                           is_refund=is_refund),
                         sale=partial(self.sale, is_refund=is_refund),
                         close_check=partial(self.close_check,
                                             summa=0,
@@ -730,9 +731,9 @@ class Driver(object):
                                             ),
                         on_error=self.cancel_check,
                         )
-        else:
+        elif mode == 'cash':
             if taxes is None:
-               taxes = [2, 0, 0, 0]
+                taxes = [2, 0, 0, 0]
             self._check(cash, items,
                         open_check=partial(self.open_check, is_refund=True),
                         sale=partial(self.sale, is_refund=True),
@@ -743,6 +744,8 @@ class Driver(object):
                         on_error=self.cancel_check,
                         )
             self.open_drawer()
+        else:
+            raise Error('Неизветный mode = %s' % mode, str(mode))
 
     def _check(self, cash, items=None, taxes=None,
                open_check=lambda: 0,
