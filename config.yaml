@@ -1,9 +1,14 @@
 COMMON:
   DEBUG: False
   TESTING: False
+
   KKM:
     PORT: /dev/tty.fiscal
     BAUDRATE: 9600
+
+  WEB:
+    PORT: 8000
+
   LOG_CFG:
     version: 1
     disable_existing_loggers: False

@@ -1,6 +1,8 @@
 Для правильной установки USB serial необходимо сделать следующее (для Ubuntu):
 
-sudo modprobe usbserial vendor=0x0483 product=0x3405
+```
+$ sudo modprobe usbserial vendor=0x0483 product=0x3405
+```
 
 Тогда dmesg|tail должен выдать что то вида:
 
@@ -41,7 +43,30 @@ $ http post localhost:8888/api2/report/ close:=1
 ```
 
 
-что написать что бы поднялось
+##что написать что бы поднялось
 ```
-$git clone https://github.com/morentharia/fiscal.git
+$ git clone https://github.com/morentharia/fiscal.git
+$ sudo apt-get install python-pip
+$ sudo pip install -r requirements.txt
+
 ```
+
+ожидаем появления 
+`Bus 001 Device 005: ID 0483:3405 SGS Thomson Microelectronics`
+
+```
+$ lsusb
+Bus 001 Device 002: ID 0424:9512 Standard Microsystems Corp. 
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 003: ID 0424:ec00 Standard Microsystems Corp. 
+Bus 001 Device 005: ID 0483:3405 SGS Thomson Microelectronics 
+Bus 001 Device 004: ID 148f:5370 Ralink Technology, Corp. RT5370 Wireless Adapter
+```
+
+```
+$ echo 'SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3405", GROUP="fiscal", MODE="0666", SYMLINK+="tty.fiscal"' | sudo tee /etc/udev/rules.d/60-fiscal.rules
+$ sudo modprobe usbserial vendor=0x0483 product=0x3405 
+$ sudo service udev restart
+```
+
+

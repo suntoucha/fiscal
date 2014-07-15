@@ -1,0 +1,13 @@
+{
+    "cash": 1000,
+    "mode": "plastic",
+    "is_refund": false,
+    "taxes": [2, 3, 0, 0],
+    "items": [
+        {"qty": 2, "price": 100, "text": "ABCDE_0", "taxes": [1, 0, 0, 0]},
+        {"qty": 2, "price": 100, "text": "ABCDE_0", "taxes": [2, 0, 0, 0]},
+        {"qty": 2, "price": 100, "text": "ABCDE_0", "taxes": [3, 0, 0, 0]},
+        {"qty": 2, "price": 100, "text": "ABCDE_0", "taxes": [4, 0, 0, 0]},
+        {"qty": 2, "price": 100, "text": "ABCDE_0", "taxes": [0, 3, 0, 0]}
+    ]
+}

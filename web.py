@@ -20,7 +20,8 @@ import settings
 class KKMDriverHandler(tornado.web.RequestHandler):
 
     def post(self, func_name):
-        self.add_header("Content-Type", "application/json; charset=utf-8")
+        # self.add_header("Content-Type", "application/json; charset=utf-8")
+        self.set_header("Content-Type", "application/json; charset=utf-8")
         try:
             logging.info(func_name)
             logging.info(self.request.body)
@@ -85,5 +86,5 @@ class Application(tornado.web.Application):
 
 if __name__ == "__main__":
     application = Application()
-    application.listen(8888)
+    application.listen(settings.WEB['PORT'])
     tornado.ioloop.IOLoop.instance().start()

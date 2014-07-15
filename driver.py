@@ -6,6 +6,7 @@ import struct
 from struct import pack, unpack
 from binascii import b2a_hex, hexlify
 import inspect
+from functools import partial
 
 import settings
 import logging
@@ -230,6 +231,8 @@ FR_SUBMODES_DESCR = {
 
 
 class Error(Exception):
+    def __str__(self):
+        return "%s %s" % (self.args)
     pass
 
 
@@ -265,7 +268,7 @@ class Driver(object):
 
     def _read(self, l):
         data = ''
-        for i in range(200):
+        for i in range(3):
             r = self.ser.read(l)
             data += r
 
@@ -592,7 +595,7 @@ class Driver(object):
         else:
             kkm.report_x()
 
-    def open_check(self, ctype=0, fg_return=None, passwd=PASSWORD):
+    def open_check(self, ctype=0, is_refund=None):
         """
         Команда:
             8DH. Длина сообщения: 6 байт.
@@ -605,7 +608,7 @@ class Driver(object):
             • Код ошибки (1 байт)
             • Порядковый номер оператора (1 байт) 1...30
         """
-        if fg_return is True:
+        if is_refund is True:
             ctype = 2
         else:
             ctype = 0
@@ -615,8 +618,8 @@ class Driver(object):
             '<B', 'operator',
         )
 
-    def sale(self, amount, price, text=u"", department=0,
-             taxes=None, fg_return=False, passwd=PASSWORD):
+    def sale(self, amount, price, text=u"",
+             taxes=None, department=0, is_refund=False):
         """Команда:     8DH. Длина сообщения: 6 байт.
         • Пароль оператора (4 байта)
         • Тип документа (1 байт): 0 – продажа;
@@ -630,7 +633,7 @@ class Driver(object):
         if taxes is None:
             taxes = [0, 0, 0, 0]
 
-        if fg_return:
+        if is_refund:
             cmd_num = 0x82  # Возврат продажи
         else:
             cmd_num = 0x80  # Продажа
@@ -651,7 +654,7 @@ class Driver(object):
 
     def close_check(self, summa, discount=0, text=u"",
                     summa2=0, summa3=0, summa4=0,
-                    taxes=[0, 0, 0, 0][:], passwd=PASSWORD):
+                    taxes=[0, 0, 0, 0][:]):
 
         """
             Команда:     85H. Длина сообщения: 71 байт.
@@ -689,64 +692,90 @@ class Driver(object):
             data['renting'] = data['renting'] / 100.0
         return data
 
-    def print_check(self, cash, items=None, mode='', nds=0):
+    def set_taxes(self, taxes=None):
+        if taxes is None:
+            logging.warning('set_taxes taxes list is empty')
+            return False
+        for i, (k, v) in enumerate(taxes):
+            self.set_table_value(6, i + 1,
+                                 2, k.encode('cp1251'))
+            self.set_table_value(6, i + 1,
+                                 1, pack('H', int(v) * 100))
+        return True
+
+    def set_header(self, text_list=None):
+        if text_list is None:
+            logging.warning('set_header header list is empty')
+            return
+
+        for i, t in zip(range(11, 15), text_list):
+            self.set_table_value(4, i, 1, t.decode('utf-8').encode('cp1251'))
+
+    def print_check(self, cash, items=None,
+                    mode='', is_refund=False, taxes=None):
+        # TODO не понятно что за taxes которые закрывают чек
+        # так что просто поставлю по умолчанию те что были у типов
+        # ну и можно руками ввести
+        if mode == 'plastic':
+            if taxes is None:
+               taxes = [0, 2, 0, 0]
+
+            self._check(cash, items,
+                        open_check=partial(self.open_check, is_refund=is_refund),
+                        sale=partial(self.sale, is_refund=is_refund),
+                        close_check=partial(self.close_check,
+                                            summa=0,
+                                            summa2=cash,
+                                            taxes=taxes,
+                                            ),
+                        on_error=self.cancel_check,
+                        )
+        else:
+            if taxes is None:
+               taxes = [2, 0, 0, 0]
+            self._check(cash, items,
+                        open_check=partial(self.open_check, is_refund=True),
+                        sale=partial(self.sale, is_refund=True),
+                        close_check=partial(self.close_check,
+                                            summa=cash,
+                                            taxes=taxes,
+                                            ),
+                        on_error=self.cancel_check,
+                        )
+            self.open_drawer()
+
+    def _check(self, cash, items=None, taxes=None,
+               open_check=lambda: 0,
+               sale=lambda: 0,
+               close_check=lambda: 0,
+               on_error=lambda: 0,
+               mode=''):
         if not items:
             items = []
+        if not taxes:
+            taxes = [0, 0, 0, 0]
 
         logging.debug((
             cash,
-            [tuple(map(i.get, ['text', 'qty', 'price'])) for i in items]
+            [tuple(map(i.get, ['text', 'qty', 'price', 'taxes'])) for i in items]
         ))
-        if nds > 0:
-            if 0:
-                # Включаем начисление налогов на ВСЮ операцию чека
-                kkm.set_table_value(1, 1, 17, chr(0x1))
-                # Включаем печатать налоговые ставки и сумму налога
-                kkm.set_table_value(1, 1, 19, chr(0x2))
-                pass
-
-            self.set_table_value(6, 1, 1, pack('H', 50 * 100))
-            self.set_table_value(6, 1, 2, u'НДС-2'.encode('cp1251'))
-
-            # self.set_table_value(6, 2, 1, pack('H', nds * 100))
-            self.set_table_value(6, 2, 1, pack('H', 10 * 100))
-            self.set_table_value(6, 2, 2, u'НДС-1'.encode('cp1251'))
 
         try:
-            # self.open_check(ctype=0)
-            self.open_check(fg_return=True)
+            open_check()
             for item in items:
-                self.sale(
+                sale(
                     item['qty'],
                     item['price'],
-                    item['text'][:40],
-                    taxes=[1, 0, 0, 0],
-                    fg_return=True,
+                    item['text'],
+                    item['taxes'],
                 )
-                self.sale(
-                    item['qty'],
-                    item['price'],
-                    item['text'][:40],
-                    taxes=[2, 0, 0, 0],
-                    fg_return=True,
-                )
-            if mode == 'plastic':
-                self.close_check(
-                    summa=0,
-                    summa2=cash,
-                    text="------------------------------",
-                    taxes=[0, 2, 0, 0]
-                )
-            else:
-                self.close_check(
-                    summa=cash,
-                    text="------------------------------",
-                    taxes=[2, 0, 0, 0]
-                )
-                self.open_drawer()
+            close_check(
+                text="------------------------------",
+            )
         except Error:
-            self.cancel_check()
+            on_error()
             raise
+
 
     def get_state(self,):
         """
@@ -875,7 +904,7 @@ class Driver(object):
             value_format = value_format.encode('utf-8')
             fmt += value_format
         else:
-            value = value.encode('cp1251')
+            # value = value.encode('cp1251')
             fmt += '%ds' % len(value)
 
         logging.info('set_table_value')
@@ -996,15 +1025,18 @@ class Driver(object):
         # self.set_date_confirm(date)
 
     def writeln(self, text):
-        # TODO сделай это 0x17
-        pass
+        """
+            печать строки
+        """
+        flag = 0x00 | 2
+        return self.std_cmd(
+            0x17,
+            '<iB%ds' % len(text), (PASSWORD, flag,
+                                   text.decode('utf-8').encode('cp1251')),
+            '<B', 'operator',
+        )
 
-    def set_header(sefl):
-        # TODO установка хедеа просто 4 строки
-        for i in range(11, 15):
-            # kkm.set_table_value(4, 1, i, 'привет '.decode('utf-8').encode('cp1251'))
-            # kkm.set_table_value(4, i, 1, 'zzz' + str(i))
-            kkm.set_table_value(4, i, 1, str(i))
+
 
 
 if __name__ == '__main__':
@@ -1013,42 +1045,46 @@ if __name__ == '__main__':
     kkm = Driver(settings.KKM['PORT'],
                  settings.KKM['BAUDRATE'])
 
-
-    # for i in range(10):
-    #     flag = 0x0
-    #     flag = flag | 2
-    #     text = '\n' * 10
-    #     # text = text[:40]
-    #     kkm.std_cmd(
-    #         0x17,
-    #         '<iB%ds' % len(text), (PASSWORD, flag, text),
-    #         '<B', 'operator',
-    #     )
-    # exit()
+    kkm.set_header(text_list = ['$  $ $   $ $   $        ',
+                                ' $$   $ $  $  $$        ',
+                                '$  $   $   $ $ $        ',
+                                '$  $   $   $   $        ',])
+    taxes = [
+        ('НДС', 10),
+        ('PDF', 15),
+        ('RTFM', 50),
+        ('KMFDM', 10),
+        ('Ебать колотить', 0),
+    ]
+    kkm.set_taxes(taxes)
     # kkm.repeat_check()
-    kkm.set_time(time=(0, 0, 0))
+    # exit()
+
+    # kkm.repeat_check()
+    # kkm.set_time(time=(0, 0, 0))
     items = [
         # dict(qty=2, price=30, text=u'пакет травы'),
         # dict(qty=75, price=70, text=u'таблеток мескалина'),
         # dict(qty=5, price=70, text=u'кислота'),
         # dict(qty=1, price=70, text=u'пол солонки кокаина'),
         # dict(qty=1, price=70, text=u'танквилизаторы всех сортов и расцветок'),
-        # dict(qty=1, price=70, text=u'текила, ром, ящик пива,'),
-        # dict(qty=1, price=70, text=u'пинта чистого эфира и амилнитрит'),
+        dict(qty=1, price=70, text=u'текила, ром, ящик пива,'),
+        dict(qty=1, price=70, text=u'пинта чистого эфира и амилнитрит'),
         dict(qty=1, price=100, text=u'текила, ром, ящик пива,'),
         # dict(qty=1, price=30, text=u'пинта чистого эфира и амилнитрит'),
     ]
 
-    # kkm.open_check()
-    # kkm.cancel_check()
-    for i in range(11, 15):
-        # kkm.set_table_value(4, 1, i, 'привет '.decode('utf-8').encode('cp1251'))
-        # kkm.set_table_value(4, i, 1, 'zzz' + str(i))
-        kkm.set_table_value(4, i, 1, str(i))
+    # items = [ dict(qty=20, price=100, text=u'текила, ром, ящик пива,'), ]
+    items = [
+        dict(qty=2, price=100, text=u'ABCDE', taxes=[1, 0, 0, 0]),
+        dict(qty=2, price=100, text=u'ABCDE', taxes=[2, 0, 0, 0]),
+        dict(qty=2, price=100, text=u'ABCDE', taxes=[3, 0, 0, 0]),
+        dict(qty=2, price=100, text=u'ABCDE', taxes=[4, 0, 0, 0]),
+    ]
+    kkm.print_check(800, items, mode='plastic')
 
-    # kkm.cancel_check()
-    kkm.print_check(20000, items, nds=12)
-    # nds = 20
+    exit()
+
 
 
     # kkm.set_date()
