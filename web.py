@@ -60,30 +60,36 @@ class KKMDriverHandler(tornado.web.RequestHandler):
 
 
 class GetMacAddressHandler(tornado.web.RequestHandler):
-    def get(self):
+    def get(self, ifname=None):
         self.set_header("Content-Type", "application/json; charset=utf-8")
         try:
-            ifname = 'eth0'
+            if not ifname:
+                ifname = 'eth0'
             mac = open('/sys/class/net/%s/address' % ifname).read()
+            mac = mac.rstrip('\n')
 
         except Exception as e:
             traceback.print_exc()
             logging.exception(e)
             error = {"status": 'error',
                      'errorText': str(e),
-                     'errorCode': -1}
+                     'errorCode': str(-1)}
             self.__write(error)
         else:
-            self.__write({'status': 'ok'})
+            self.__write({'status': 'ok', 'mac': mac})
         finally:
             self.finish()
 
+    def __write(self, data={}):
+        self.write(json.dumps(data,
+                              ensure_ascii=False,
+                              encoding='utf-8'))
 
 class Application(tornado.web.Application):
     def __init__(self):
         handlers = [
             (r"/api/([^/]+)/?", KKMDriverHandler),
-            (r"/mac/?", GetMacAddressHandler),
+            (r"/mac/([^/]+)?/?", GetMacAddressHandler),
         ]
         conf = dict(
             template_path='templates',
@@ -96,6 +102,8 @@ class Application(tornado.web.Application):
         time.sleep(1)
         self.driver = driver.Driver(settings.KKM['PORT'],
                                     settings.KKM['BAUDRATE'])
+        # import mock
+        # self.driver = mock.Mock()
 
         # self.driver.cash_income(0)
         # DEBUG
