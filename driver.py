@@ -735,8 +735,8 @@ class Driver(object):
             if taxes is None:
                 taxes = [2, 0, 0, 0]
             self._check(cash, items,
-                        open_check=partial(self.open_check, is_refund=True),
-                        sale=partial(self.sale, is_refund=True),
+                        open_check=partial(self.open_check, is_refund=is_refund),
+                        sale=partial(self.sale, is_refund=is_refund),
                         close_check=partial(self.close_check,
                                             summa=cash,
                                             taxes=taxes,
