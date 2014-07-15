@@ -987,6 +987,12 @@ class Driver(object):
         )
 
     def set_date(self, date=(20, 3, 3)):
+        self.set_date_1st(date)
+        # TODO: вылетает с внутренней ошибкой выяснить
+        # это дело в нефискальном режиме или ещё в чём
+        self.set_date_confirm(date)
+
+    def set_date_1st(self, date=(20, 3, 3)):
         """
             Программирование даты
             Команда:
@@ -1025,7 +1031,7 @@ class Driver(object):
         self.set_date(date)
         # TODO: вылетает с внутренней ошибкой выяснить
         # это дело в нефискальном режиме или ещё в чём
-        # self.set_date_confirm(date)
+        self.set_date_confirm(date)
 
     def writeln(self, text):
         """
