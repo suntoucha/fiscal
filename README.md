@@ -70,3 +70,24 @@ $ sudo service udev restart
 ```
 
 
+## Тестим
+```
+$ sudo pip install httpie
+
+$ http post 192.168.0.198:8000/api/cash_income/   < ./test_data/cash_income.json
+$ http post 192.168.0.198:8000/api/cash_outcome/  < ./test_data/cash_outcome.json
+$ http post 192.168.0.198:8000/api/print_check/ < ./test_data/print_check_0.json
+$ http post 192.168.0.198:8000/api/print_check/ < ./test_data/print_check_1.json
+$ http post 192.168.0.198:8000/api/print_check/ < ./test_data/print_check_2.json
+$ http post 192.168.0.198:8000/api/print_check/ < ./test_data/print_check_3.json
+$ http post 192.168.0.198:8000/api/repeat_check/  < ./test_data/repeat_check.json
+$ http post 192.168.0.198:8000/api/set_header/    < ./test_data/set_header.json
+$ http post 192.168.0.198:8000/api/set_taxes/     < ./test_data/set_taxes.json
+$ http post 192.168.0.198:8000/api/writeln/       < ./test_data/writeln.json
+$ http post 192.168.0.198:8000/api/report_x/
+$ http post 192.168.0.198:8000/api/report_z/
+
+```
+
+
+

@@ -278,7 +278,7 @@ class Driver(object):
             logging.debug('read %d bytes data = [%s]', l, hexlify(data))
 
         if l != 0:
-            raise Error('Read Timeout')
+            raise Error('Read Timeout', -1)
 
         return data
 
