@@ -98,12 +98,12 @@ class Application(tornado.web.Application):
             autoreload=True,
         )
 
-        # import time
-        # time.sleep(1)
-        # self.driver = driver.Driver(settings.KKM['PORT'],
-        #                             settings.KKM['BAUDRATE'])
-        import mock
-        self.driver = mock.Mock()
+        import time
+        time.sleep(1)
+        self.driver = driver.Driver(settings.KKM['PORT'],
+                                    settings.KKM['BAUDRATE'])
+        # import mock
+        # self.driver = mock.Mock()
 
         # self.driver.cash_income(0)
         # DEBUG
