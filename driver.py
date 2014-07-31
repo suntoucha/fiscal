@@ -758,6 +758,12 @@ class Driver(object):
         if not taxes:
             taxes = [0, 0, 0, 0]
 
+        try:
+            logging.info("Включаем печать налоговыx ставок и суммы налога")
+            self.set_table_value(1, 1, 19, chr(0x02))
+        except Error as e:
+            logging.error(str(e))
+
         logging.debug((
             cash,
             [tuple(map(i.get, ['text', 'qty', 'price', 'taxes'])) for i in items]
