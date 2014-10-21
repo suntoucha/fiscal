@@ -2,9 +2,13 @@
 # -*- coding: utf8 -*-
 __author__ = 'hobbut'
 
+from tornado import gen
 import tornado.ioloop
 import tornado.web
+import toro
+
 import json
+import time
 import traceback
 # import serial
 import logging
@@ -17,8 +21,15 @@ import driver
 import settings
 
 
+DRIVER_LOCK = toro.Lock()
+
+
 class KKMDriverHandler(tornado.web.RequestHandler):
 
+    # def initialize(self):
+    #     self.lock = toro.Lock()
+
+    @gen.coroutine
     def post(self, func_name):
         # self.add_header("Content-Type", "application/json; charset=utf-8")
         self.set_header("Content-Type", "application/json; charset=utf-8")
@@ -32,7 +43,15 @@ class KKMDriverHandler(tornado.web.RequestHandler):
                 raise StandardError('No such method {}'.format(func_name))
 
             data = json.loads(self.request.body) if self.request.body else {}
-            func(**data)
+
+            with (yield DRIVER_LOCK.acquire()):
+                logging.debug('LOCK acquire')
+                assert DRIVER_LOCK.locked()
+                func(**data)
+
+            logging.debug('LOCK release')
+            assert not DRIVER_LOCK.locked()
+
         except driver.Error as e:
             traceback.print_exc()
             error_str, error_code = e.args
@@ -85,6 +104,7 @@ class GetMacAddressHandler(tornado.web.RequestHandler):
                               ensure_ascii=False,
                               encoding='utf-8'))
 
+
 class Application(tornado.web.Application):
     def __init__(self):
         handlers = [
@@ -98,10 +118,8 @@ class Application(tornado.web.Application):
             autoreload=True,
         )
 
-        import time
-        time.sleep(1)
-        self.driver = driver.Driver(settings.KKM['PORT'],
-                                    settings.KKM['BAUDRATE'])
+        self.driver = None
+        self.init_fiscal_driver()
         # import mock
         # self.driver = mock.Mock()
 
@@ -113,7 +131,83 @@ class Application(tornado.web.Application):
 
         tornado.web.Application.__init__(self, handlers, **conf)
 
+    @gen.coroutine
+    def init_fiscal_driver(self):
+        with (yield DRIVER_LOCK.acquire()):
+            logging.debug('LOCK acquire')
+            assert DRIVER_LOCK.locked()
+
+            if self.driver:
+                if self.driver.is_open_port():
+                    self.driver.close_port()
+
+            self.driver = None
+
+            while True:
+                try:
+                    self.driver = driver.Driver(settings.KKM['PORT'],
+                                                settings.KKM['BAUDRATE'])
+                except Exception as e:
+                    logging.error('init fiscal driver fail')
+                    traceback.print_exc()
+                    logging.exception(e)
+
+                    logging.error('sleep 5 until next try')
+                    time.sleep(5)
+
+                else:
+                    break
+
+            # костыль против этого замеса что при первом
+            # включении первая команда никогда не срабатывает
+            try:
+                self.driver.beep()
+                self.driver.beep()
+            except driver.Error as e:
+                logging.warning('3десь может быть ошибка')
+                traceback.print_exc()
+                error_str, error_code = e.args
+                logging.exception(e)
+
+        logging.debug('LOCK release')
+        assert not DRIVER_LOCK.locked()
+
+    @gen.coroutine
+    def driver_ping(self):
+        with (yield DRIVER_LOCK.acquire()):
+            logging.debug('LOCK acquire')
+            assert DRIVER_LOCK.locked()
+
+            is_ok = True
+            try:
+                self.driver.ping()
+                # raise StandardError('test')
+            except Exception as e:
+                logging.error('ping fail')
+                is_ok = False
+                traceback.print_exc()
+                logging.exception(e)
+
+        logging.debug('LOCK release')
+        assert not DRIVER_LOCK.locked()
+
+        if not is_ok:
+            self.init_fiscal_driver()
+
+        # pass
+        # logging.debug('haha isOpen %s', self.driver.get_state())
+        # logging.debug('haha isOpen %s', self.driver.ser.isOpen())
+
+
 if __name__ == "__main__":
     application = Application()
     application.listen(settings.WEB['PORT'])
+
+    ping_cbk = tornado.ioloop.PeriodicCallback(
+        application.driver_ping,
+        5 * 1000,
+        tornado.ioloop.IOLoop.instance()
+    )
+    ping_cbk.start()
+
     tornado.ioloop.IOLoop.instance().start()

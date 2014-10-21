@@ -9,4 +9,5 @@ pyrestful==0.3.2.alpha
 pyserial==2.7
 rainbow-logging-handler==2.2.0
 tornado==3.2.2
+toro==0.6
 wsgiref==0.1.2

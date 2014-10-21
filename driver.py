@@ -1051,7 +1051,21 @@ class Driver(object):
             '<B', 'operator',
         )
 
+    def ping(self):
+        """
+            Использую как Ping Запрос регистрационного номера ЭКЛЗ
+        """
+        return self.std_cmd(
+            0xab,
+            '<i', (PASSWORD,),
+            '<5s', 'reg_number',
+        )
 
+    def close_port(self):
+        self.ser.close()
+
+    def is_open_port(self):
+        self.ser.isOpen()
 
 
 if __name__ == '__main__':
@@ -1059,6 +1073,8 @@ if __name__ == '__main__':
     logging.debug('common')
     kkm = Driver(settings.KKM['PORT'],
                  settings.KKM['BAUDRATE'])
+    print kkm.ping()
+    exit()
 
     kkm.set_header(text_list = ['$  $ $   $ $   $        ',
                                 ' $$   $ $  $  $$        ',
