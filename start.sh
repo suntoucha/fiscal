@@ -15,6 +15,9 @@ sudo service udev restart
 
 fuser -k /dev/tty.fiscal;
 
+# source env/bin/activate && pip install requirements.txt
+pip install -r requirements.txt
+
 # while true;
 # do
     python web.py;
