@@ -2,6 +2,27 @@ COMMON:
   DEBUG: False
   TESTING: False
 
+  PING_TIMEOUT: 5
+  CONNECT_TIMEOUT: 2
+  WELCOME_MSG: [
+      '                                         ',
+      '         TornadoServer is ready ...',
+      '                                         ',
+      '   _________         _________           ',
+      '  /         \       /         \          ',
+      ' /  /~~~~~\  \     /  /~~~~~\  \         ',
+      ' |  |     |  |     |  |     |  |         ',
+      ' |  |     |  |     |  |     |  |         ',
+      ' |  |     |  |     |  |     |  |         ',
+      ' |  |     |  |     |  |     |  |       //',
+      '(o  o)    \  \_____/  /     \  \_____/ / ',
+      ' \__/      \         /       \        /  ',
+      '  |         ~~~~~~~~~         ~~~~~~~~   ',
+      '  ^                                      ',
+      '                                         ',
+      '                                         ',
+  ]     
+
   KKM:
     PORT: /dev/tty.fiscal
     BAUDRATE: 9600

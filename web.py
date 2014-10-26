@@ -22,15 +22,10 @@ import logging
 import driver
 
 import settings
-
-
-DRIVER_LOCK = toro.Lock()
+from pprint import pformat
 
 
 class KKMDriverHandler(tornado.web.RequestHandler):
-
-    # def initialize(self):
-    #     self.lock = toro.Lock()
 
     @gen.coroutine
     def post(self, func_name):
@@ -40,17 +35,12 @@ class KKMDriverHandler(tornado.web.RequestHandler):
             logging.info(func_name)
             logging.info(self.request.body)
 
-            func = self.application.device.get_driver_func(func_name)
-
             data = json.loads(self.request.body) if self.request.body else {}
 
-            with (yield DRIVER_LOCK.acquire()):
-                logging.debug('LOCK acquire')
-                assert DRIVER_LOCK.locked()
-                func(**data)
-
-            logging.debug('LOCK release')
-            assert not DRIVER_LOCK.locked()
+            res = yield self.application.device.exec_driver_func(
+                func_name, data
+            )
+            logging.info('res: %s', pformat(res))
 
         except driver.Error as e:
             traceback.print_exc()
@@ -68,7 +58,15 @@ class KKMDriverHandler(tornado.web.RequestHandler):
                      'errorCode': str(-1)}
             self.__write(error)
         else:
-            self.__write({'status': 'ok'})
+            if func_name == 'get_state':
+                self.__write(
+                    {
+                        'status': 'ok',
+                        'res': res
+                    }
+                )
+            else:
+                self.__write({'status': 'ok'})
         finally:
             self.finish()
 
@@ -114,21 +112,25 @@ class ConnectedState(object):
 
         self.ping_periodic_callback = tornado.ioloop.PeriodicCallback(
             self.ping,
-            5 * 1000,
+            settings.PING_TIMEOUT * 1000,
             self.loop
         )
 
     def on_enter(self):
         self.ping_periodic_callback.start()
+        if settings.WELCOME_MSG:
+            self.device.driver.writeln(text=settings.WELCOME_MSG)
+        self.device.driver.cut()
 
     def on_leave(self):
         self.ping_periodic_callback.stop()
 
+    @gen.coroutine
     def ping(self):
         logging.info('ping')
         try:
-            # self.driver.ping()
-            raise StandardError('test')
+            yield self.device.exec_driver_func('ping')
+            # raise StandardError('test')
         except Exception as e:
             logging.error('ping fail')
             traceback.print_exc()
@@ -138,12 +140,16 @@ class ConnectedState(object):
                 partial(self.device.change_state, 'disconnected')
             )
 
-    def get_driver_func(self, func_name):
+    def exec_driver_func(self, func_name, params=None):
+        func = None
+        logging.info("func_name %s, params %s", func_name, params)
+
         if hasattr(self.device.driver, func_name):
             func = getattr(self.device.driver, func_name)
         else:
             raise NotImplementedError('No such method {}'.format(func_name))
-        return func
+
+        return func(**params)
 
 
 class DisconnectedState(object):
@@ -163,9 +169,9 @@ class DisconnectedState(object):
         self.device.driver = None
 
         if not self.connect():
-            logging.info('try connect after 5 sec')
+            logging.info('try connect after %s sec', settings.CONNECT_TIMEOUT)
             self.loop.add_timeout(
-                time.time() + 5,
+                time.time() + settings.CONNECT_TIMEOUT,
                 partial(self.device.change_state, 'disconnected')
             )
         else:
@@ -179,8 +185,10 @@ class DisconnectedState(object):
                          settings.KKM['PORT'],
                          settings.KKM['BAUDRATE'])
             # self.device.driver = mock.MagicMock()
-            self.device.driver = driver.Driver(settings.KKM['PORT'],
-                                        settings.KKM['BAUDRATE'])
+            self.device.driver = driver.Driver(
+                settings.KKM['PORT'],
+                settings.KKM['BAUDRATE']
+            )
         except Exception as e:
             logging.error('init fiscal driver fail')
             traceback.print_exc()
@@ -194,13 +202,11 @@ class DisconnectedState(object):
             self.device.driver.beep()
         except driver.Error as e:
             logging.warning('3десь может быть ошибка')
-            traceback.print_exc()
-            error_str, error_code = e.args
             logging.exception(e)
 
         return True
 
-    def get_driver_func(self, func_name):
+    def exec_driver_func(self, func_name, params=None):
         raise StandardError('server has no connection to fiscal')
 
 
@@ -214,30 +220,48 @@ class Device(object):
             'connected': ConnectedState(self),
             'disconnected': DisconnectedState(self),
         }
+        self.driver_lock = toro.Lock()
 
         if 0:
             self.driver = mock.MagicMock()
 
         self.change_state('disconnected')
 
+    @gen.coroutine
     def change_state(self, state_name):
-        logging.info('-> state %s', state_name)
-        if self.state:
-            if hasattr(self.state, 'on_leave'):
-                # logging.info('on_leave')
-                self.state.on_leave()
+        with (yield self.driver_lock.acquire()):
+            logging.info('LOCK acquire')
 
-        if state_name not in self.transitions:
-            raise NotImplementedError('Error state_name %s' % state_name)
+            logging.info('-> state %s', state_name)
+            if self.state:
+                if hasattr(self.state, 'on_leave'):
+                    # logging.info('on_leave')
+                    self.state.on_leave()
 
-        self.state = self.transitions[state_name]
+            if state_name not in self.transitions:
+                raise NotImplementedError('Error state_name %s' % state_name)
 
-        if hasattr(self.state, 'on_enter'):
-            # logging.info('on_enter')
-            self.state.on_enter()
+            self.state = self.transitions[state_name]
 
-    def get_driver_func(self, func_name):
-        return self.state.get_driver_func(func_name)
+            if hasattr(self.state, 'on_enter'):
+                # logging.info('on_enter')
+                self.state.on_enter()
+        logging.info('LOCK release')
+
+    @gen.coroutine
+    def exec_driver_func(self, func_name, params=None):
+        if not params:
+            params = {}
+        if self.driver_lock.locked():
+            raise StandardError('DEVICE is busy')
+
+        with (yield self.driver_lock.acquire()):
+            logging.info('LOCK acquire')
+            res = self.state.exec_driver_func(
+                func_name, params
+            )
+        logging.info('LOCK release')
+        raise gen.Return(res)
 
 
 class Application(tornado.web.Application):

@@ -712,7 +712,8 @@ class Driver(object):
             self.set_table_value(4, i, 1, t.encode('cp1251'))
 
     def print_check(self, cash, items=None, mode='',
-                    is_refund=False, taxes=None):
+                    is_refund=False, taxes=None,
+                    extra_text=None):
         # TODO не понятно что за taxes которые закрывают чек
         # так что просто поставлю по умолчанию те что были у типов
         # ну и можно руками ввести
@@ -730,6 +731,7 @@ class Driver(object):
                                             taxes=taxes,
                                             ),
                         on_error=self.cancel_check,
+                        extra_text=extra_text,
                         )
         elif mode == 'cash':
             if taxes is None:
@@ -742,17 +744,20 @@ class Driver(object):
                                             taxes=taxes,
                                             ),
                         on_error=self.cancel_check,
+                        extra_text=extra_text,
                         )
             self.open_drawer()
         else:
-            raise Error('Неизветный mode = %s' % mode, str(mode))
+            raise Error('Неизветный mode = %s Варианты: (plastic, cash)' % mode,
+                        str(mode))
 
     def _check(self, cash, items=None, taxes=None,
                open_check=lambda: 0,
                sale=lambda: 0,
                close_check=lambda: 0,
                on_error=lambda: 0,
-               mode=''):
+               mode='',
+               extra_text=None):
         if not items:
             items = []
         if not taxes:
@@ -778,8 +783,12 @@ class Driver(object):
                     item['text'],
                     item['taxes'],
                 )
+
+            if extra_text:
+                self.writeln(extra_text)
+
             close_check(
-                text="------------------------------",
+                # text="------------------------------",
             )
         except Error:
             on_error()
@@ -824,7 +833,7 @@ class Driver(object):
             ('3s', 'fr_date'),     # "Дата ПО ФР (3 байта) ДД-ММ-ГГ",
             ('B', 'room_num'),     # "Номер в зале (1 байт)",
             ('H', 'doc_num'),     # "Сквозной номер текущего документа (2 байта)",
-            ('H', 'fr_flags'),     # "Флаги ФР (2 байта)",
+            ('2s', 'fr_flags'),     # "Флаги ФР (2 байта)",
             ('B', 'mode'),     # "Режим ФР (1 байт)",
             ('B', 'submode'),     # "Подрежим ФР (1 байт)",
             ('B', 'fr_port'),     # "Порт ФР (1 байт)",
@@ -857,38 +866,56 @@ class Driver(object):
         res['time'] = tuple(bytearray(res['time']))
 
         res['mode_str'] = ' Режим: %s' % FP_MODES_DESCR.get(res['mode'], 'Режим неизвестен')
-        res['submode_str']  = ' Подрежим: %s' % FR_SUBMODES_DESCR.get(res['mode'], {}).get(res['submode'], 'Подрежим не предусмотрен')
+        res['submode_str'] = ' Подрежим: %s' % FR_SUBMODES_DESCR.get(res['mode'], {}).get(res['submode'], 'Подрежим не предусмотрен')
 
-        bits = bin(res['fr_flags']).lstrip('0b').rjust(16, '0')
-        flags = [b == '1' for b in bits]
+        if 0:
+            print bin(res['fr_flags'])
+            bits = bin(res['fr_flags']).lstrip('0b').rjust(16, '0')
+            flags = [b == '1' for b in bits]
 
-        res['fr_flags'] = dict(zip(
-            [
-                'roll_oper_log',  # 0 – Рулон операционного журнала (0 – нет, 1 – есть)
-                'roll_check_tape',  # 1 – Рулон чековой ленты (0 – нет, 1 – есть)
-                'top_sensor_doc',  # 2 – Верхний датчик подкладного документа (0 – нет, 1 – да)
-                'lower_sensor_doc',  # 3 – Нижний датчик подкладного документа (0 – нет, 1 – да)
-                'deciminal_point,  '# 4 – Положение десятичной точки (0 – 0 знаков, 1 – 2 знака)
-                'ELKZ',   # 5 – ЭКЛЗ (0 – нет, 1 – есть)
-                'optical_sensor_oper_log',   # 6 – Оптический датчик операционного журнала (0 – бумаги нет, 1 – бумага есть)
-                'optical_sensor_check_tape', # 7 – Оптический датчик чековой ленты (0 – бумаги нет, 1 – бумага есть)
-                'thermal_track_control_tape', # 8 – Рычаг термоголовки контрольной ленты (0 – поднят, 1 – опущен)
-                'thermal_track_control_tape', # 9 – Рычаг термоголовки чековой ленты (0 – поднят, 1 – опущен)
-                'is_up', # 10 – Крышка корпуса ФР (0 – опущена, 1 – поднята)
-                'dawler', # 11 – Денежный ящик (0 – закрыт, 1 – окрыт)
-                'right_sensor_failure', # 12 – Отказ правого датчика принтера (0 – нет, 1 – да)
-                'left_sensor_failure', # 13 – Отказ левого датчика принтера (0 – нет, 1 – да)
-                'EKLZ_almost_full', # 14 – ЭКЛЗ почти заполнена (0 – нет, 1 – да)
-                'accurancy', # 15а – Увеличенная точность количества (0 – нормальная точность, 1 – увеличенная
-                             # точность) [для ККМ без ЭКЛЗ]
-                             # 15б – Буфер принтера непуст (0 – пуст, 1 – непуст)
-            ],
-            flags
-        ))
+        print bin(ord(res['fr_flags'][0])).lstrip('0b').rjust(8, '0')
+        print bin(ord(res['fr_flags'][1])).lstrip('0b').rjust(8, '0')
+
+        res['fr_flags_raw'] = [
+            bin(ord(res['fr_flags'][i])).lstrip('0b').rjust(8, '0') for i in [0, 1]
+        ]
+        if 0:
+            res['fr_flags'] = dict(zip(
+                [
+                    'roll_oper_log',  # 0 – Рулон операционного журнала (0 – нет, 1 – есть)
+                    'roll_check_tape',  # 1 – Рулон чековой ленты (0 – нет, 1 – есть)
+                    'top_sensor_doc',  # 2 – Верхний датчик подкладного документа (0 – нет, 1 – да)
+                    'lower_sensor_doc',  # 3 – Нижний датчик подкладного документа (0 – нет, 1 – да)
+                    'deciminal_point,  '# 4 – Положение десятичной точки (0 – 0 знаков, 1 – 2 знака)
+                    'ELKZ',   # 5 – ЭКЛЗ (0 – нет, 1 – есть)
+                    'optical_sensor_oper_log',   # 6 – Оптический датчик операционного журнала (0 – бумаги нет, 1 – бумага есть)
+                    'optical_sensor_check_tape', # 7 – Оптический датчик чековой ленты (0 – бумаги нет, 1 – бумага есть)
+                    'thermal_track_control_tape', # 8 – Рычаг термоголовки контрольной ленты (0 – поднят, 1 – опущен)
+                    'thermal_track_control_tape', # 9 – Рычаг термоголовки чековой ленты (0 – поднят, 1 – опущен)
+                    'is_up', # 10 – Крышка корпуса ФР (0 – опущена, 1 – поднята)
+                    'dawler', # 11 – Денежный ящик (0 – закрыт, 1 – окрыт)
+                    'right_sensor_failure', # 12 – Отказ правого датчика принтера (0 – нет, 1 – да)
+                    'left_sensor_failure', # 13 – Отказ левого датчика принтера (0 – нет, 1 – да)
+                    'EKLZ_almost_full', # 14 – ЭКЛЗ почти заполнена (0 – нет, 1 – да)
+                    'accurancy', # 15а – Увеличенная точность количества (0 – нормальная точность, 1 – увеличенная
+                                 # точность) [для ККМ без ЭКЛЗ]
+                                 # 15б – Буфер принтера непуст (0 – пуст, 1 – непуст)
+                ],
+                flags
+            ))
 
         # print res
 
         return res
+
+    def get_type_of_device(self):
+        """
+        """
+        return self.std_cmd(
+            0xfc,
+            '<', (),
+            '<B', 'reg_number',
+        )
 
     def set_table_value(self, table, row, field, value, value_format=None):
         """
@@ -1043,11 +1070,41 @@ class Driver(object):
         """
             печать строки
         """
-        flag = 0x00 | 2
+        res = None
+        if isinstance(text, list):
+            for t in text:
+                flag = 0x00 | 2
+                res = self.std_cmd(
+                    0x17,
+                    '<iB%ds' % len(t), (PASSWORD, flag,
+                                        t.decode('utf-8').encode('cp1251')),
+                    '<B', 'operator',
+                )
+        else:
+            flag = 0x00 | 2
+            res = self.std_cmd(
+                0x17,
+                '<iB%ds' % len(text), (PASSWORD, flag,
+                                       text.decode('utf-8').encode('cp1251')),
+                '<B', 'operator',
+            )
+        return res
+
+    def cut(self):
+        """
+            Отрезка чека
+            Команда:
+            25H. Длина сообщения: 6 байт.
+            • Пароль оператора (4 байта)
+            • Тип отрезки (1 байт) «0» – полная, «1» – неполная
+            Ответ:
+            25H. Длина сообщения: 3 байта.
+            • Код ошибки (1 байт)
+            • Порядковый номер оператора (1 байт) 1...30
+        """
         return self.std_cmd(
-            0x17,
-            '<iB%ds' % len(text), (PASSWORD, flag,
-                                   text.decode('utf-8').encode('cp1251')),
+            0x25,
+            '<iB', (PASSWORD, 1),
             '<B', 'operator',
         )
 
@@ -1073,21 +1130,24 @@ if __name__ == '__main__':
     logging.debug('common')
     kkm = Driver(settings.KKM['PORT'],
                  settings.KKM['BAUDRATE'])
-    print kkm.ping()
-    exit()
+    # print kkm.ping()
+    # exit()
 
-    kkm.set_header(text_list = ['$  $ $   $ $   $        ',
-                                ' $$   $ $  $  $$        ',
-                                '$  $   $   $ $ $        ',
-                                '$  $   $   $   $        ',])
-    taxes = [
-        ('НДС', 10),
-        ('PDF', 15),
-        ('RTFM', 50),
-        ('KMFDM', 10),
-        ('Ебать колотить', 0),
-    ]
-    kkm.set_taxes(taxes)
+    kkm.set_header(text_list = [u' блин запорол хедер        ',
+                                u'надеюсь это не критичная инфа       ',
+                                u'надеюсь это не критичная инфа       ',
+                                u'надеюсь это не критичная инфа  была     ',])
+    # exit()
+    if 0:
+        taxes = [
+            # ('НДС', 10),
+            ('PDF', 15),
+            ('RTFM', 50),
+            ('KMFDM', 10),
+            # ('Ебать колотить', 0),
+        ]
+        kkm.set_taxes(taxes)
+
     # kkm.repeat_check()
     # exit()
 
