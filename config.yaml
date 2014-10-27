@@ -25,7 +25,8 @@ COMMON:
 
   KKM:
     PORT: /dev/tty.fiscal
-    BAUDRATE: 9600
+    BAUDRATE: 115200
+    # BAUDRATE: 9600
 
   WEB:
     PORT: 8000

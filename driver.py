@@ -1077,7 +1077,7 @@ class Driver(object):
                 res = self.std_cmd(
                     0x17,
                     '<iB%ds' % len(t), (PASSWORD, flag,
-                                        t.decode('utf-8').encode('cp1251')),
+                                        t.encode('cp1251')),
                     '<B', 'operator',
                 )
         else:
@@ -1085,7 +1085,7 @@ class Driver(object):
             res = self.std_cmd(
                 0x17,
                 '<iB%ds' % len(text), (PASSWORD, flag,
-                                       text.decode('utf-8').encode('cp1251')),
+                                       text.encode('cp1251')),
                 '<B', 'operator',
             )
         return res
@@ -1107,6 +1107,10 @@ class Driver(object):
             '<iB', (PASSWORD, 1),
             '<B', 'operator',
         )
+
+    def writeln_and_cut(self, *args, **kwargs):
+        self.writeln(*args, **kwargs)
+        self.cut()
 
     def ping(self):
         """

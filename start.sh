@@ -12,8 +12,7 @@ echo 'SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3405", GROUP
 sudo modprobe usbserial vendor=0x0483 product=0x3405 
 sudo service udev restart
 
-
-fuser -k /dev/tty.fiscal;
+# fuser -k /dev/tty.fiscal;
 
 # source env/bin/activate && pip install requirements.txt
 pip install -r requirements.txt
