@@ -6,7 +6,7 @@ COMMON:
   CONNECT_TIMEOUT: 2
   WELCOME_MSG: [
       '                                         ',
-      '         TornadoServer is ready ...',
+      '       Cassby готов печатать чеки        ',
       '                                         ',
       '   _________         _________           ',
       '  /         \       /         \          ',
